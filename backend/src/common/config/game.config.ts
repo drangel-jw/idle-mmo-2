@@ -63,7 +63,7 @@ export const GameConfig = {
   // === Security ===
   SECURITY: {
     BCRYPT_SALT_ROUNDS: parseInt(process.env.BCRYPT_SALT_ROUNDS || '10'),
-    JWT_SECRET: process.env.JWT_SECRET || 'your-secret-key', // Should be overridden in production
+    JWT_SECRET: process.env.JWT_SECRET || 'YOUR_VERY_SECRET_KEY_CHANGE_ME_LATER', // Should be overridden in production
   },
 
   // === Game Loop ===
@@ -77,7 +77,45 @@ export const GameConfig = {
     DEFAULT_SPEED: 75,
     DEFAULT_ATTACK_RANGE: 30,
     DEFAULT_XP_REWARD: 10,
-  }
+  },
+
+  // === Zone Dimensions ===
+  ZONE: {
+    WIDTH: 1000,
+    HEIGHT: 1000,
+    NESTS_PER_TEMPLATE: 3,
+  },
+
+  // === AI Behavior ===
+  AI: {
+    AGGRO_RANGE: 150,
+    ATTACK_RANGE: 40,
+    ATTACK_COOLDOWN_MS: 2000,
+    WANDER_CHANCE: 0.03,
+    LEASH_DISTANCE_FACTOR: 1.5,
+  },
+
+  // === Knockback ===
+  KNOCKBACK: {
+    DISTANCE: 80,
+    DURATION_MS: 300,
+  },
+
+  // === Chat ===
+  CHAT: {
+    MAX_MESSAGE_LENGTH: 200,
+  },
+
+  // === Spawning ===
+  SPAWNING: {
+    DYING_CLEANUP_MS: 10000,
+  },
+
+  // === Movement ===
+  MOVEMENT: {
+    CHARACTER_SPEED_PPS: 150,
+    FORMATION_OFFSET: 30,
+  },
 } as const;
 
 // Type for the config to ensure type safety

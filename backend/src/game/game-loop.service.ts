@@ -14,6 +14,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { DroppedItem } from './interfaces/dropped-item.interface';
 import { InventoryService } from '../inventory/inventory.service';
 import { AbilityService } from '../abilities/ability.service';
+import { GameConfig } from '../common/config/game.config';
 
 @Injectable()
 export class GameLoopService implements OnApplicationShutdown {
@@ -22,11 +23,8 @@ export class GameLoopService implements OnApplicationShutdown {
     private isLoopRunning = false;
     private server: Server | null = null; // To hold the WebSocket server instance
 
-    // --- Constants moved from Gateway ---
-    private readonly TICK_RATE = 100; // ms (10 FPS)
-    private readonly CHARACTER_HEALTH_REGEN_PERCENT_PER_SEC = 1.0; // Regenerate 1% of max health per second
-    private readonly ITEM_DESPAWN_TIME_MS = 120000; // 2 minutes
-    // ------------------------------------
+    private readonly TICK_RATE = GameConfig.GAME_LOOP.TICK_RATE_MS;
+    private readonly CHARACTER_HEALTH_REGEN_PERCENT_PER_SEC = GameConfig.CHARACTER.HEALTH_REGEN_PERCENT_PER_SEC;
 
     constructor(
         private zoneService: ZoneService,
@@ -88,13 +86,14 @@ export class GameLoopService implements OnApplicationShutdown {
         const deltaTime = this.TICK_RATE / 1000.0; // Delta time in seconds
 
         try {
-            for (const [zoneId, zone] of (this.zoneService as any).zones.entries()) { // Use getter later
-                if (zone.players.size === 0 && zone.enemies.size === 0 && zone.nests?.size === 0) continue; // Skip empty zones
+            for (const zoneId of this.zoneService.getActiveZoneIds()) {
+                const playersInZone = this.zoneService.getPlayersInZone(zoneId);
+                const currentEnemiesInZone = this.zoneService.getZoneEnemies(zoneId);
 
-                const currentEnemiesInZone = this.zoneService.getZoneEnemies(zoneId); // Fetch once per tick
+                if (playersInZone.length === 0 && currentEnemiesInZone.length === 0) continue; // Skip empty zones
 
                 // --- Character Processing (Refactored) ---
-                for (const player of zone.players.values()) {
+                for (const player of playersInZone) {
                     for (const character of player.characters) {
                         // Store initial state for comparison later
                         const initialHealth = character.currentHealth;
@@ -158,7 +157,7 @@ export class GameLoopService implements OnApplicationShutdown {
                             this.broadcastService.queueItemPickedUp(zoneId, tickResult.pickedUpItemId);
 
                             // 2. Send inventory update to the specific player
-                            const playerSocket = zone.players.get(player.user.id)?.socket;
+                            const playerSocket = player.socket;
                             if (playerSocket) {
                                 try {
                                     // Fetch the latest full inventory
@@ -179,7 +178,7 @@ export class GameLoopService implements OnApplicationShutdown {
 
                         // --- Movement Simulation (Refactored) ---
                          let needsPositionUpdate = false;
-                         const currentPosition: Point = { x: character.positionX, y: character.positionY };
+                         const currentPosition: Point = { x: character.positionX ?? 0, y: character.positionY ?? 0 };
                          const targetPosition: Point | null = (character.targetX !== null && character.targetY !== null) 
                                                               ? { x: character.targetX, y: character.targetY } 
                                                               : null;
@@ -187,7 +186,7 @@ export class GameLoopService implements OnApplicationShutdown {
                          if (targetPosition) {
                             // Get character speed from entity data (assuming it exists, else use default)
                             // TODO: Add baseSpeed to Character entity later if needed
-                             const characterSpeed = 150; // Placeholder: Use character.baseSpeed eventually
+                             const characterSpeed = GameConfig.MOVEMENT.CHARACTER_SPEED_PPS;
 
                              const moveResult: MovementResult = this.movementService.simulateMovement(
                                  currentPosition,
@@ -420,7 +419,7 @@ export class GameLoopService implements OnApplicationShutdown {
                 // --- Dying Enemy Cleanup Check ---
                 const dyingEnemies = this.zoneService.getZoneEnemies(zoneId).filter(e => e.isDying);
                 for (const dyingEnemy of dyingEnemies) {
-                    if (dyingEnemy.deathTimestamp && (now - dyingEnemy.deathTimestamp) >= 10000) { // 10 seconds
+                    if (dyingEnemy.deathTimestamp && (now - dyingEnemy.deathTimestamp) >= GameConfig.SPAWNING.DYING_CLEANUP_MS) {
                         this.logger.debug(`[ENEMY DEATH] Cleaning up decayed enemy ${dyingEnemy.name} (${dyingEnemy.id}) after 10 seconds`);
                         this.zoneService.removeEnemy(zoneId, dyingEnemy.id);
                     }

@@ -1,6 +1,7 @@
 // frontend/src/network/NetworkManager.ts
 import { io, Socket } from 'socket.io-client';
 import { EventBus } from '../EventBus';
+import { ClientConfig } from '../config/game.config';
 
 // Define interfaces for expected data structures (optional but good practice)
 interface ZoneCharacterState {
@@ -70,8 +71,7 @@ export class NetworkManager {
     private socket: Socket | null = null;
     private static instance: NetworkManager;
     // +++ Add Backend API Base URL (Adjust if needed) +++
-    //private apiBaseUrl = 'http://141.155.171.22:3000'; // REMOVED /api prefix
-    private apiBaseUrl = 'http://localhost:3000';
+    private apiBaseUrl = ClientConfig.SERVER.API_BASE_URL;
     private constructor() {}
 
     public static getInstance(): NetworkManager {
@@ -90,8 +90,7 @@ export class NetworkManager {
         }
 
         console.log('Attempting to connect to WebSocket server...');
-        //this.socket = io('ws://141.155.171.22:3000', { auth: { token: token } });
-        this.socket = io('ws://localhost:3000', { auth: { token: token } });
+        this.socket = io(ClientConfig.SERVER.API_BASE_URL.replace('http', 'ws'), { auth: { token: token } });
 
         this.socket.on('connect', () => {
             console.log('>>> NetworkManager: Received "connect" event from socket.io. Emitting "network-connect" via EventBus.');

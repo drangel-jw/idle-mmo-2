@@ -6,23 +6,16 @@ import { UserModule } from '../user/user.module'; // Import UserModule
 import { PassportModule } from '@nestjs/passport';
 import { JwtModule } from '@nestjs/jwt';
 import { JwtStrategy } from './jwt.strategy'; // We will create this next
-
-// Load environment variables (optional but recommended)
-// import { ConfigModule, ConfigService } from '@nestjs/config';
+import { GameConfig } from '../common/config/game.config';
 
 @Module({
   imports: [
     UserModule, // Make UserService available
     PassportModule,
     JwtModule.register({
-      // --- Using environment variables (recommended) ---
-      // secret: process.env.JWT_SECRET, // Load from .env file
-      // signOptions: { expiresIn: process.env.JWT_EXPIRES_IN || '1h' }, // e.g., '60s', '1h', '7d'
-
-      // --- Hardcoded (okay for now, but change later) ---
         global: true,
-        secret: 'YOUR_VERY_SECRET_KEY_CHANGE_ME_LATER', // Replace with a strong, secret key! Store in env var.
-        signOptions: { expiresIn: '1h' }, // Token expiry time
+        secret: GameConfig.SECURITY.JWT_SECRET,
+        signOptions: { expiresIn: '1h' },
     }),
 
     // Optional: If using .env file for secrets

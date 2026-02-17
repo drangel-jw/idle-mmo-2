@@ -16,10 +16,23 @@ import { BroadcastService } from './broadcast.service'; // <-- Add this import
 import { InventoryModule } from 'src/inventory/inventory.module';
 import { LootModule } from 'src/loot/loot.module';
 import { AbilityModule } from '../abilities/ability.module'; // Import AbilityModule
+// Store imports
+import { PlayerStateStore } from './stores/player-state.store';
+import { EnemyStateStore } from './stores/enemy-state.store';
+import { NestStateStore } from './stores/nest-state.store';
+import { DroppedItemStore } from './stores/dropped-item.store';
+import { SpellQueueStore } from './stores/spell-queue.store';
 
 @Module({
   imports: [UserModule, CharacterModule, EnemyModule, InventoryModule, LootModule, AbilityModule], // Make services available for injection
   providers: [
+    // Stores
+    PlayerStateStore,
+    EnemyStateStore,
+    NestStateStore,
+    DroppedItemStore,
+    SpellQueueStore,
+    // Services
     GameGateway,
     ZoneService,
     CombatService,
@@ -32,6 +45,6 @@ import { AbilityModule } from '../abilities/ability.module'; // Import AbilityMo
     BroadcastService,
     Logger,
   ],
-  exports: [ZoneService, AIService, BroadcastService]
+  exports: [ZoneService, AIService, BroadcastService, PlayerStateStore, EnemyStateStore, NestStateStore, DroppedItemStore, SpellQueueStore]
 })
 export class GameModule {}

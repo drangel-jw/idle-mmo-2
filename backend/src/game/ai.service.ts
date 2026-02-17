@@ -5,18 +5,17 @@ import { EnemyInstance } from './interfaces/enemy-instance.interface';
 import { AIAction, AIActionMoveTo } from './interfaces/ai-action.interface'; // Added AIActionMoveTo
 import { Character } from 'src/character/character.entity'; // Needed for findCharacterFromPosition return type
 import { RuntimeCharacterData } from './zone.service'; // Correct import path
+import { GameConfig } from '../common/config/game.config';
 
 @Injectable()
 export class AIService {
   private readonly logger = new Logger(AIService.name);
 
-  // Constants moved/added from GameGateway
-  // TODO: Get these from Enemy entity/template eventually
-  private readonly ENEMY_AGGRO_RANGE = 150; // Example
-  private readonly ENEMY_ATTACK_RANGE = 40; // Example range
-  private readonly ATTACK_COOLDOWN = 2000; // ms - Example
-  private readonly WANDER_CHANCE = 0.03; // ~3% chance per AI tick to start wandering when idle
-  private readonly ENEMY_LEASH_DISTANCE_FACTOR = 1.5; // How far beyond wander radius before leashing
+  private readonly ENEMY_AGGRO_RANGE = GameConfig.AI.AGGRO_RANGE;
+  private readonly ENEMY_ATTACK_RANGE = GameConfig.AI.ATTACK_RANGE;
+  private readonly ATTACK_COOLDOWN = GameConfig.AI.ATTACK_COOLDOWN_MS;
+  private readonly WANDER_CHANCE = GameConfig.AI.WANDER_CHANCE;
+  private readonly ENEMY_LEASH_DISTANCE_FACTOR = GameConfig.AI.LEASH_DISTANCE_FACTOR;
 
   constructor(
     private readonly zoneService: ZoneService, // To get current state

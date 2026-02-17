@@ -4,6 +4,7 @@ import { NetworkManager } from '../network/NetworkManager';
 import { EventBus } from '../EventBus';
 import { InventoryItem } from '../../../backend/src/inventory/inventory.entity'; // Adjust path if needed
 import { EquipmentSlot } from '../../../backend/src/item/item.types'; // Import EquipmentSlot
+import { ClientConfig } from '../config/game.config';
 
 // Interface for the inventory update event payload
 interface InventoryUpdatePayload {
@@ -1326,8 +1327,8 @@ export default class UIScene extends Phaser.Scene {
 
     // --- NEW: Frontend XP Calculation Helper ---
     private _frontendCalculateXpForLevel(level: number): number {
-        const baseXP = 100;
-        const exponent = 1.5;
+        const baseXP = ClientConfig.EXPERIENCE.BASE_XP;
+        const exponent = ClientConfig.EXPERIENCE.LEVEL_EXPONENT;
         if (level <= 1) return 0;
         return Math.floor(baseXP * Math.pow(level - 1, exponent));
     }

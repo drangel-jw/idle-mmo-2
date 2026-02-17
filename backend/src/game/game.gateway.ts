@@ -26,6 +26,7 @@ import { calculateDistance } from './utils/geometry.utils'; // Import distance u
 import { EquipmentSlot } from '../item/item.types'; // <-- Import EquipmentSlot
 import { AbilityService } from '../abilities/ability.service'; // Import AbilityService
 import { CombatService } from './combat.service'; // Import CombatService
+import { GameConfig } from '../common/config/game.config';
 
 // Add pickup range constant
 // const ITEM_PICKUP_RANGE = 50; // pixels // No longer used for initial command
@@ -109,7 +110,7 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
         // Verify the token and decode payload
         const payload = await this.jwtService.verifyAsync(token, {
           // Use the same secret as in AuthModule/JwtStrategy
-          secret: 'YOUR_VERY_SECRET_KEY_CHANGE_ME_LATER', // Replace with env var later!
+          secret: GameConfig.SECURITY.JWT_SECRET,
         });
 
         // Token is valid, fetch user data
@@ -406,7 +407,7 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
       const rawMessage = data.message;
       // Limit message length
-      const MAX_MSG_LENGTH = 200;
+      const MAX_MSG_LENGTH = GameConfig.CHAT.MAX_MESSAGE_LENGTH;
       if (rawMessage.length > MAX_MSG_LENGTH) {
             this.logger.warn(`sendMessage rejected: Message too long from ${user.username}.`);
             // Optionally send an error back to the client here
@@ -568,7 +569,7 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       }
 
       const formationCenter = data.target;
-      const formationOffset = 30; // Pixels
+      const formationOffset = GameConfig.MOVEMENT.FORMATION_OFFSET;
 
       // --- Calculate target positions --- 
       const targets: { charId: string, targetX: number, targetY: number }[] = [];
