@@ -167,9 +167,15 @@ export class CombatVisualManager {
 
     cleanupOldAttacks(): void {
         const now = Date.now();
+        const timeout = ClientConfig.COMBAT.ATTACK_TIMEOUT_MS;
         for (const [targetId, timestamp] of this.recentPlayerAttacks.entries()) {
-            if (now - timestamp > ClientConfig.COMBAT.ATTACK_TIMEOUT_MS) {
+            if (now - timestamp > timeout) {
                 this.recentPlayerAttacks.delete(targetId);
+            }
+        }
+        for (const [spellId, timestamp] of this.recentSpellCasts.entries()) {
+            if (now - timestamp > timeout) {
+                this.recentSpellCasts.delete(spellId);
             }
         }
     }

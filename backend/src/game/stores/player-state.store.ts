@@ -101,12 +101,15 @@ export class PlayerStateStore {
                 this.logger.error(`Character ${char.id} fetched from DB is missing the 'class' property! Defaulting.`);
             }
 
+            const spawnX = char.positionX ?? (100 + Math.random() * 50);
+            const spawnY = char.positionY ?? (100 + Math.random() * 50);
+
             const runtimeChar: RuntimeCharacterData = {
                 ...char,
-                positionX: char.positionX ?? (100 + Math.random() * 50),
-                positionY: char.positionY ?? (100 + Math.random() * 50),
-                targetX: char.positionX ?? (100 + Math.random() * 50),
-                targetY: char.positionY ?? (100 + Math.random() * 50),
+                positionX: spawnX,
+                positionY: spawnY,
+                targetX: spawnX,
+                targetY: spawnY,
                 currentZoneId: zoneId,
                 ownerId: user.id,
                 ownerName: user.username,
@@ -119,8 +122,8 @@ export class PlayerStateStore {
                 attackTargetId: null,
                 targetItemId: null,
                 commandState: null,
-                anchorX: char.positionX ?? (100 + Math.random() * 50),
-                anchorY: char.positionY ?? (100 + Math.random() * 50),
+                anchorX: spawnX,
+                anchorY: spawnY,
                 attackRange: char.attackRange,
                 aggroRange: char.aggroRange,
                 leashDistance: char.leashDistance,
@@ -152,9 +155,8 @@ export class PlayerStateStore {
             attackSpeed: char.attackSpeed,
         }));
 
-        if (selfCharacterStates.length > 0) {
-            playerSocket.to(zoneId).emit('playerJoined', { characters: selfCharacterStates });
-        }
+        // Note: do NOT emit playerJoined here — GameGateway.handleEnterZone already broadcasts it
+        // to avoid duplicate events reaching other clients.
     }
 
     removePlayerFromZone(playerSocket: Socket): { zoneId: string; userId: string } | null {

@@ -63,13 +63,18 @@ export const GameConfig = {
   // === Security ===
   SECURITY: {
     BCRYPT_SALT_ROUNDS: parseInt(process.env.BCRYPT_SALT_ROUNDS || '10'),
-    JWT_SECRET: process.env.JWT_SECRET || 'YOUR_VERY_SECRET_KEY_CHANGE_ME_LATER', // Should be overridden in production
+    JWT_SECRET: process.env.JWT_SECRET || (() => {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('JWT_SECRET environment variable must be set in production');
+      }
+      return 'dev-only-insecure-secret';
+    })(),
   },
 
   // === Game Loop ===
   GAME_LOOP: {
     TICK_RATE_MS: parseInt(process.env.TICK_RATE_MS || '100'), // 10 TPS
-    DELTA_TIME_SEC: parseFloat(process.env.DELTA_TIME_SEC || '0.1'),
+    get DELTA_TIME_SEC() { return this.TICK_RATE_MS / 1000; }, // Always derived — never set independently
   },
 
   // === Enemy/AI System ===

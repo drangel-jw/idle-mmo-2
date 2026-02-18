@@ -124,14 +124,16 @@ export class EntityUpdateHandler {
         this.scene.events.off('droppedItemClicked', this.handleDroppedItemClicked, this);
     }
 
-    private handlePlayerJoined(data: ZoneCharacterState): void {
-        if (!data.className) return;
-        this.entityManager.createOrUpdateCharacterSprite(data, false);
+    private handlePlayerJoined(data: { characters: ZoneCharacterState[] }): void {
+        if (!data.characters) return;
+        data.characters.forEach(charData => {
+            this.entityManager.createOrUpdateCharacterSprite(charData, false);
+        });
     }
 
-    private handlePlayerLeft(data: { ownerId: string }): void {
+    private handlePlayerLeft(data: { playerId: string }): void {
         this.entityManager.otherCharacters.forEach((sprite, charId) => {
-            if (sprite.ownerId === data.ownerId) {
+            if (sprite.ownerId === data.playerId) {
                 sprite.destroy();
                 this.entityManager.otherCharacters.delete(charId);
             }

@@ -10,6 +10,8 @@ export interface QueuedSpellCast {
     timestamp: number;
 }
 
+const MAX_SPELLS_PER_ZONE_PER_TICK = 50;
+
 @Injectable()
 export class SpellQueueStore {
     private readonly logger = new Logger(SpellQueueStore.name);
@@ -36,6 +38,11 @@ export class SpellQueueStore {
             targetY,
             timestamp: Date.now(),
         };
+
+        if (queue.length >= MAX_SPELLS_PER_ZONE_PER_TICK) {
+            this.logger.warn(`[SpellQueueStore] Zone ${zoneId} spell queue full (${MAX_SPELLS_PER_ZONE_PER_TICK}), dropping cast from ${casterId}`);
+            return null;
+        }
 
         queue.push(spellCast);
         this.logger.debug(`[SpellQueueStore] Queued spell cast ${spellCast.id} for character ${casterId} in zone ${zoneId}`);

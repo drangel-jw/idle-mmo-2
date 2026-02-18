@@ -531,7 +531,7 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       const playersAlreadyInZone = this.zoneService.getZoneCharacterStates(zoneId);
 
       // 2. Add the new player to the zone state
-      this.zoneService.addPlayerToZone(zoneId, client, user, selectedCharacters);
+      await this.zoneService.addPlayerToZone(zoneId, client, user, selectedCharacters);
 
       // 3. Notify OTHERS in the zone that a new player joined
       // Prepare data about the new player's characters

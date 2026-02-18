@@ -85,8 +85,8 @@ export class GameLoopService implements OnApplicationShutdown {
         const now = startTime; // Use consistent timestamp for checks within the tick
         const deltaTime = this.TICK_RATE / 1000.0; // Delta time in seconds
 
-        try {
-            for (const zoneId of this.zoneService.getActiveZoneIds()) {
+        for (const zoneId of this.zoneService.getActiveZoneIds()) {
+          try {
                 const playersInZone = this.zoneService.getPlayersInZone(zoneId);
                 const currentEnemiesInZone = this.zoneService.getZoneEnemies(zoneId);
 
@@ -425,17 +425,14 @@ export class GameLoopService implements OnApplicationShutdown {
                     }
                 }
 
-                // --- Flush All Queued Events for this Zone --- 
+                // --- Flush All Queued Events for this Zone ---
                 this.broadcastService.flushZoneEvents(zoneId);
 
-            } // End zone loop
-        } catch (error) {
-            this.logger.error(`Error in game loop: ${error.message}`, error.stack);
-            // Consider stopping the loop or implementing error recovery
-             this.isLoopRunning = false; // Stop loop on error for safety?
-             if (this.gameLoopTimeout) clearTimeout(this.gameLoopTimeout);
-             this.gameLoopTimeout = null;
-        }
+          } catch (error) {
+              this.logger.error(`Error processing zone ${zoneId}: ${error.message}`, error.stack);
+              // Continue to next zone — one bad zone should not crash the entire loop
+          }
+        } // End zone loop
 
         const endTime = Date.now();
         const duration = endTime - startTime;
