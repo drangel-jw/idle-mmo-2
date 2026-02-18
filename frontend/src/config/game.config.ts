@@ -1,0 +1,32 @@
+export const ClientConfig = {
+  SERVER: {
+    API_BASE_URL: 'http://localhost:3000',
+  },
+  CAMERA: {
+    FOLLOW_LERP: 0.1,
+    ZOOM: 1.7,
+  },
+  WORLD: {
+    WIDTH: 4000,
+    HEIGHT: 4000,
+  },
+  MOVEMENT: {
+    ARRIVAL_THRESHOLD: 15,
+    CLICK_MARKER_FADE_MS: 2000,
+  },
+  COMBAT: {
+    ATTACK_TIMEOUT_MS: 3000,
+    SCREEN_SHAKE_INTENSITY: 10,
+    SCREEN_SHAKE_DURATION: 300,
+    RECENT_ATTACK_THRESHOLD_MS: 2000,
+    FLOATING_TEXT_RISE: 30,
+  },
+  ENEMY: {
+    DEATH_FADE_MS: 500,
+    DEATH_DESTROY_DELAY_MS: 10000,
+  },
+  EXPERIENCE: {
+    BASE_XP: 100,
+    LEVEL_EXPONENT: 1.5,
+  },
+};

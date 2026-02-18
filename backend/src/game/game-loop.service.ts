@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnApplicationShutdown } from '@nestjs/common';
 import { Server } from 'socket.io';
-import { ZoneService, RuntimeCharacterData } from './zone.service';
+import { ZoneService, RuntimeCharacterData, QueuedSpellCast } from './zone.service';
 import { CombatService } from './combat.service';
 import { AIService } from './ai.service';
 import { EnemyInstance } from './interfaces/enemy-instance.interface';
@@ -13,6 +13,8 @@ import { LootService } from '../loot/loot.service';
 import { v4 as uuidv4 } from 'uuid';
 import { DroppedItem } from './interfaces/dropped-item.interface';
 import { InventoryService } from '../inventory/inventory.service';
+import { AbilityService } from '../abilities/ability.service';
+import { GameConfig } from '../common/config/game.config';
 
 @Injectable()
 export class GameLoopService implements OnApplicationShutdown {
@@ -21,11 +23,8 @@ export class GameLoopService implements OnApplicationShutdown {
     private isLoopRunning = false;
     private server: Server | null = null; // To hold the WebSocket server instance
 
-    // --- Constants moved from Gateway ---
-    private readonly TICK_RATE = 100; // ms (10 FPS)
-    private readonly CHARACTER_HEALTH_REGEN_PERCENT_PER_SEC = 1.0; // Regenerate 1% of max health per second
-    private readonly ITEM_DESPAWN_TIME_MS = 120000; // 2 minutes
-    // ------------------------------------
+    private readonly TICK_RATE = GameConfig.GAME_LOOP.TICK_RATE_MS;
+    private readonly CHARACTER_HEALTH_REGEN_PERCENT_PER_SEC = GameConfig.CHARACTER.HEALTH_REGEN_PERCENT_PER_SEC;
 
     constructor(
         private zoneService: ZoneService,
@@ -38,6 +37,7 @@ export class GameLoopService implements OnApplicationShutdown {
         private broadcastService: BroadcastService,
         private lootService: LootService,
         private inventoryService: InventoryService,
+        private abilityService: AbilityService,
     ) {}
 
     // Method to start the loop, called by GameGateway
@@ -85,14 +85,15 @@ export class GameLoopService implements OnApplicationShutdown {
         const now = startTime; // Use consistent timestamp for checks within the tick
         const deltaTime = this.TICK_RATE / 1000.0; // Delta time in seconds
 
-        try {
-            for (const [zoneId, zone] of (this.zoneService as any).zones.entries()) { // Use getter later
-                if (zone.players.size === 0 && zone.enemies.size === 0 && zone.nests?.size === 0) continue; // Skip empty zones
+        for (const zoneId of this.zoneService.getActiveZoneIds()) {
+          try {
+                const playersInZone = this.zoneService.getPlayersInZone(zoneId);
+                const currentEnemiesInZone = this.zoneService.getZoneEnemies(zoneId);
 
-                const currentEnemiesInZone = this.zoneService.getZoneEnemies(zoneId); // Fetch once per tick
+                if (playersInZone.length === 0 && currentEnemiesInZone.length === 0) continue; // Skip empty zones
 
                 // --- Character Processing (Refactored) ---
-                for (const player of zone.players.values()) {
+                for (const player of playersInZone) {
                     for (const character of player.characters) {
                         // Store initial state for comparison later
                         const initialHealth = character.currentHealth;
@@ -156,7 +157,7 @@ export class GameLoopService implements OnApplicationShutdown {
                             this.broadcastService.queueItemPickedUp(zoneId, tickResult.pickedUpItemId);
 
                             // 2. Send inventory update to the specific player
-                            const playerSocket = zone.players.get(player.user.id)?.socket;
+                            const playerSocket = player.socket;
                             if (playerSocket) {
                                 try {
                                     // Fetch the latest full inventory
@@ -177,7 +178,7 @@ export class GameLoopService implements OnApplicationShutdown {
 
                         // --- Movement Simulation (Refactored) ---
                          let needsPositionUpdate = false;
-                         const currentPosition: Point = { x: character.positionX, y: character.positionY };
+                         const currentPosition: Point = { x: character.positionX ?? 0, y: character.positionY ?? 0 };
                          const targetPosition: Point | null = (character.targetX !== null && character.targetY !== null) 
                                                               ? { x: character.targetX, y: character.targetY } 
                                                               : null;
@@ -185,7 +186,7 @@ export class GameLoopService implements OnApplicationShutdown {
                          if (targetPosition) {
                             // Get character speed from entity data (assuming it exists, else use default)
                             // TODO: Add baseSpeed to Character entity later if needed
-                             const characterSpeed = 150; // Placeholder: Use character.baseSpeed eventually
+                             const characterSpeed = GameConfig.MOVEMENT.CHARACTER_SPEED_PPS;
 
                              const moveResult: MovementResult = this.movementService.simulateMovement(
                                  currentPosition,
@@ -223,6 +224,12 @@ export class GameLoopService implements OnApplicationShutdown {
 
                     } // End character loop
                 } // End player loop
+
+                // --- Process Queued Spell Casts ---
+                const queuedSpells = this.zoneService.getAndClearQueuedSpells(zoneId);
+                for (const spell of queuedSpells) {
+                    await this.processSpellCast(spell, zoneId, now);
+                }
 
                 // --- Enemy AI, State & Movement Processing (Refactored) ---
                  // Fetch fresh list in case some died from player attacks earlier in the tick
@@ -412,23 +419,20 @@ export class GameLoopService implements OnApplicationShutdown {
                 // --- Dying Enemy Cleanup Check ---
                 const dyingEnemies = this.zoneService.getZoneEnemies(zoneId).filter(e => e.isDying);
                 for (const dyingEnemy of dyingEnemies) {
-                    if (dyingEnemy.deathTimestamp && (now - dyingEnemy.deathTimestamp) >= 10000) { // 10 seconds
+                    if (dyingEnemy.deathTimestamp && (now - dyingEnemy.deathTimestamp) >= GameConfig.SPAWNING.DYING_CLEANUP_MS) {
                         this.logger.debug(`[ENEMY DEATH] Cleaning up decayed enemy ${dyingEnemy.name} (${dyingEnemy.id}) after 10 seconds`);
                         this.zoneService.removeEnemy(zoneId, dyingEnemy.id);
                     }
                 }
 
-                // --- Flush All Queued Events for this Zone --- 
+                // --- Flush All Queued Events for this Zone ---
                 this.broadcastService.flushZoneEvents(zoneId);
 
-            } // End zone loop
-        } catch (error) {
-            this.logger.error(`Error in game loop: ${error.message}`, error.stack);
-            // Consider stopping the loop or implementing error recovery
-             this.isLoopRunning = false; // Stop loop on error for safety?
-             if (this.gameLoopTimeout) clearTimeout(this.gameLoopTimeout);
-             this.gameLoopTimeout = null;
-        }
+          } catch (error) {
+              this.logger.error(`Error processing zone ${zoneId}: ${error.message}`, error.stack);
+              // Continue to next zone — one bad zone should not crash the entire loop
+          }
+        } // End zone loop
 
         const endTime = Date.now();
         const duration = endTime - startTime;
@@ -438,4 +442,92 @@ export class GameLoopService implements OnApplicationShutdown {
     }
 
     // --- Helper Functions ---
+
+    /**
+     * Processes a single spell cast, applying damage and generating events.
+     * This ensures spell damage uses the same consolidated flow as normal attacks.
+     */
+    private async processSpellCast(spell: QueuedSpellCast, zoneId: string, now: number): Promise<void> {
+        try {
+            // Get the caster character
+            const caster = this.zoneService.getCharacterStateById(zoneId, spell.casterId);
+            if (!caster) {
+                this.logger.warn(`[ProcessSpell] Caster ${spell.casterId} not found in zone ${zoneId}`);
+                return;
+            }
+
+            // Get the ability data
+            const ability = await this.abilityService.findById(spell.abilityId);
+            if (!ability) {
+                this.logger.warn(`[ProcessSpell] Ability ${spell.abilityId} not found`);
+                return;
+            }
+
+            this.logger.log(`🎯 PROCESSING SPELL: ${caster.name} casting ${ability.name} at (${spell.targetX}, ${spell.targetY})`);
+
+            // Apply spell damage using consolidated CombatService
+            const spellResults = await this.combatService.handleSpellDamage(
+                caster,
+                spell.targetX,
+                spell.targetY,
+                ability.radius || 100,
+                ability.damage || 50,
+                zoneId
+            );
+
+            // --- Generate Enemy Health Updates (like normal attacks) ---
+            const enemyHealthUpdates: Array<{ id: string; health: number }> = [];
+            for (const result of spellResults) {
+                enemyHealthUpdates.push({
+                    id: result.enemyId,
+                    health: result.targetCurrentHealth
+                });
+            }
+
+            // Queue enemy health updates (same as normal combat)
+            enemyHealthUpdates.forEach(enemyUpdate => {
+                const enemy = this.zoneService.getEnemyInstanceById(zoneId, enemyUpdate.id);
+                const updatePayload = { 
+                    id: enemyUpdate.id, 
+                    x: enemy?.position.x, 
+                    y: enemy?.position.y,
+                    health: enemyUpdate.health 
+                };
+                this.broadcastService.queueEntityUpdate(zoneId, updatePayload);
+            });
+
+            // Send spell damage events for visual effects (immediately for screen shake timing)
+            if (spellResults.length > 0) {
+                const spellDamageData = {
+                    abilityId: ability.id,
+                    abilityName: ability.name,
+                    targetX: spell.targetX,
+                    targetY: spell.targetY,
+                    radius: ability.radius || 100,
+                    damage: ability.damage || 50,
+                    affectedEnemies: spellResults.map(result => ({
+                        enemyId: result.enemyId,
+                        damage: result.damageDealt
+                    }))
+                };
+                
+                // Queue spell damage events (will be sent with other events at end of tick)
+                this.broadcastService.queueSpellDamage(zoneId, spellDamageData);
+                this.logger.log(`🎯 SPELL PROCESSED: ${spellResults.length} enemies hit, events sent immediately`);
+            }
+
+            // Queue visual spell cast event
+            this.broadcastService.queueSpellCast(zoneId, {
+                casterId: caster.id,
+                abilityId: ability.id,
+                abilityName: ability.name,
+                targetX: spell.targetX,
+                targetY: spell.targetY,
+                radius: ability.radius,
+            });
+
+        } catch (error) {
+            this.logger.error(`[ProcessSpell] Error processing spell ${spell.id}: ${error.message}`, error.stack);
+        }
+    }
 }

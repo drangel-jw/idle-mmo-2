@@ -63,13 +63,18 @@ export const GameConfig = {
   // === Security ===
   SECURITY: {
     BCRYPT_SALT_ROUNDS: parseInt(process.env.BCRYPT_SALT_ROUNDS || '10'),
-    JWT_SECRET: process.env.JWT_SECRET || 'your-secret-key', // Should be overridden in production
+    JWT_SECRET: process.env.JWT_SECRET || (() => {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('JWT_SECRET environment variable must be set in production');
+      }
+      return 'dev-only-insecure-secret';
+    })(),
   },
 
   // === Game Loop ===
   GAME_LOOP: {
     TICK_RATE_MS: parseInt(process.env.TICK_RATE_MS || '100'), // 10 TPS
-    DELTA_TIME_SEC: parseFloat(process.env.DELTA_TIME_SEC || '0.1'),
+    get DELTA_TIME_SEC() { return this.TICK_RATE_MS / 1000; }, // Always derived — never set independently
   },
 
   // === Enemy/AI System ===
@@ -77,7 +82,45 @@ export const GameConfig = {
     DEFAULT_SPEED: 75,
     DEFAULT_ATTACK_RANGE: 30,
     DEFAULT_XP_REWARD: 10,
-  }
+  },
+
+  // === Zone Dimensions ===
+  ZONE: {
+    WIDTH: 1000,
+    HEIGHT: 1000,
+    NESTS_PER_TEMPLATE: 3,
+  },
+
+  // === AI Behavior ===
+  AI: {
+    AGGRO_RANGE: 150,
+    ATTACK_RANGE: 40,
+    ATTACK_COOLDOWN_MS: 2000,
+    WANDER_CHANCE: 0.03,
+    LEASH_DISTANCE_FACTOR: 1.5,
+  },
+
+  // === Knockback ===
+  KNOCKBACK: {
+    DISTANCE: 80,
+    DURATION_MS: 300,
+  },
+
+  // === Chat ===
+  CHAT: {
+    MAX_MESSAGE_LENGTH: 200,
+  },
+
+  // === Spawning ===
+  SPAWNING: {
+    DYING_CLEANUP_MS: 10000,
+  },
+
+  // === Movement ===
+  MOVEMENT: {
+    CHARACTER_SPEED_PPS: 150,
+    FORMATION_OFFSET: 30,
+  },
 } as const;
 
 // Type for the config to ensure type safety

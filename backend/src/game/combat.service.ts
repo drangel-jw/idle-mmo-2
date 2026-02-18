@@ -7,6 +7,7 @@ import { BroadcastService } from './broadcast.service';
 import { LootService } from '../loot/loot.service';
 import { DroppedItem } from './interfaces/dropped-item.interface';
 import { v4 as uuidv4 } from 'uuid';
+import { GameConfig } from '../common/config/game.config';
 // No longer need InventoryService here
 // import { InventoryService } from '../inventory/inventory.service';
 
@@ -18,7 +19,6 @@ type Combatant =
 @Injectable()
 export class CombatService {
     private readonly logger = new Logger(CombatService.name);
-    private readonly ITEM_DESPAWN_TIME_MS = 120000; // 2 minutes
 
     constructor(
         private readonly zoneService: ZoneService,
@@ -31,13 +31,11 @@ export class CombatService {
     /**
      * Calculates damage based on effective/base stats.
      */
-    calculateDamage(attackerEffectiveAttack: number, defenderEffectiveDefense: number): number {
-        // Calculating damage from stats
-        const rawDamage = attackerEffectiveAttack - defenderEffectiveDefense;
-        // Raw damage calculated
-        const finalDamage = Math.max(0, rawDamage); // Damage cannot be negative
-        // Final damage calculated
-        return finalDamage;
+    calculateDamage(attack: number, defense: number): number {
+        if (attack <= 0) return 0;
+        const rawDamage = (attack * attack) / (attack + defense);
+        const variance = 0.9 + Math.random() * 0.2; // +/- 10%
+        return Math.max(1, Math.floor(rawDamage * variance));
     }
 
     /**
@@ -230,8 +228,8 @@ export class CombatService {
         enemy.knockbackState = {
             startTime: Date.now(),
             direction: normalizedDirection,
-            distance: 80,
-            duration: 300,
+            distance: GameConfig.KNOCKBACK.DISTANCE,
+            duration: GameConfig.KNOCKBACK.DURATION_MS,
             originalPosition: { ...enemyPosition }
         };
         
@@ -267,7 +265,7 @@ export class CombatService {
             if (droppedLoot.length > 0) {
                 this.logger.debug(`Loot calculated: ${droppedLoot.length} items dropped`);
                 const now = Date.now();
-                const despawnTime = now + this.ITEM_DESPAWN_TIME_MS;
+                const despawnTime = now + GameConfig.COMBAT.ITEM_DESPAWN_TIME_MS;
                 
                 for (const loot of droppedLoot) {
                     const droppedItem: DroppedItem = {
