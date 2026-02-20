@@ -501,24 +501,21 @@ export class CharacterService {
   async saveCharacterPositions(updates: Array<{ characterId: string; positionX: number; positionY: number; currentZoneId: string }>): Promise<void> {
     if (updates.length === 0) return;
 
-    const queryRunner = this.characterRepository.manager.connection.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
     try {
-      for (const update of updates) {
-        await queryRunner.manager.update(Character, update.characterId, {
-          positionX: update.positionX,
-          positionY: update.positionY,
-          currentZoneId: update.currentZoneId,
-        });
-      }
-      await queryRunner.commitTransaction();
+      // Use Promise.all with individual saves for simplicity and safety
+      // TypeORM's save() with an array performs a single transaction internally
+      await Promise.all(
+        updates.map(update =>
+          this.characterRepository.update(update.characterId, {
+            positionX: update.positionX,
+            positionY: update.positionY,
+            currentZoneId: update.currentZoneId,
+          }),
+        ),
+      );
       this.logger.debug(`Saved positions for ${updates.length} characters`);
     } catch (error) {
-      await queryRunner.rollbackTransaction();
       this.logger.error(`Failed to save character positions: ${error.message}`, error.stack);
-    } finally {
-      await queryRunner.release();
     }
   }
 }

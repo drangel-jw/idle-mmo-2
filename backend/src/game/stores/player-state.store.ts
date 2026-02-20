@@ -115,7 +115,7 @@ export class PlayerStateStore {
                 currentZoneId: zoneId,
                 ownerId: user.id,
                 ownerName: user.username,
-                currentHealth: char.baseHealth,
+                currentHealth: char.baseHealth, // Always full health on join (currentHealth not persisted in DB)
                 baseAttack: char.baseAttack,
                 baseDefense: char.baseDefense,
                 effectiveAttack: effectiveStats.effectiveAttack,

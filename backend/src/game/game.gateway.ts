@@ -154,8 +154,8 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   handleDisconnect(client: Socket) {
     const user = client.data.user as User;
     const username = user?.username || 'Unknown';
+    const zoneId = client.data.currentZoneId as string;
     this.logger.log(`Client disconnected: ${client.id} (${username})`);
-    delete client.data.currentZoneId;
     // Clean up rate limit tracking
     if (user?.id) {
       this.moveCommandTimestamps.delete(user.id);
@@ -163,7 +163,6 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     // Save character positions before removal
     if (user?.id) {
       const characters = this.playerStateStore.getPlayerCharacters(user.id);
-      const zoneId = client.data.currentZoneId as string;
       if (characters && characters.length > 0) {
         const positionUpdates = characters
           .filter(c => c.positionX !== null && c.positionY !== null)
@@ -873,6 +872,12 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     }
 
     const { abilityId, targetX, targetY } = data;
+
+    // Validate spell target coordinates
+    if (!Number.isFinite(targetX) || !Number.isFinite(targetY)) {
+      this.logger.warn(`Cast spell rejected for user ${user.username}: non-finite coordinates`);
+      return { success: false, message: 'Invalid coordinates' };
+    }
 
     try {
       // Basic validation - ability exists
