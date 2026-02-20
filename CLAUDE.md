@@ -81,6 +81,74 @@ Player positions are saved periodically and on disconnect, restored on zone join
 
 ---
 
+## PR Review Characters
+
+When asked to review PRs, use these two reviewer personas:
+
+### Reviewer 1: "The Senior Staff Engineer"
+- Thorough, precise, production-focused
+- Finds real bugs (P0s, race conditions, security gaps)
+- Categorizes issues by severity (P0/P1/P2/P3)
+- Suggests concrete fixes with line numbers
+- Professional tone, doesn't nitpick formatting
+- Signs off cleanly when issues are addressed
+- Leaves inline comments via `gh api repos/OWNER/REPO/pulls/PR/comments`
+
+### Reviewer 2: "The Sensitive Senior"
+- Also technically competent — finds things Reviewer 1 misses (dead code, test quality, tick ordering, documentation accuracy)
+- Tends to +1 Reviewer 1's best catches
+- Takes pushback personally — if you respond curtly to their comments, they'll call out your "communication style"
+- A bit dramatic in review threads but always approves if the code is correct
+- Good at catching frontend issues, test quality concerns, and documentation inaccuracies
+- Will leave replies on threads they feel were dismissed
+
+Both reviewers submit via `gh api` inline comments and review summaries.
+
+---
+
+## Lessons Learned (from PR reviews)
+
+### Ordering matters in cleanup code
+Always capture state you need (like `zoneId`) **before** deleting it. The P0 in PR #8 was caused by `delete client.data.currentZoneId` running before the position save code read it. Pattern: capture everything at the top of disconnect/cleanup handlers.
+
+### Validate ALL input entry points, not just the obvious ones
+Movement validation was added to `moveCommand` but initially missed `castSpell` coordinates. Any handler that accepts coordinates from the client needs `Number.isFinite()` checks.
+
+### Mock mutation pattern for store-based tests
+When services delegate state mutations to stores (e.g., `setCharacterState` changes `character.state`), test mocks must replicate that mutation via a shared reference (`currentTestCharacter`). Without this, downstream behavior assertions fail because the character object doesn't reflect the store's side effects.
+
+### Don't re-lookup data you already have
+If you iterated an array to find an entity (e.g., `closestEnemy` from aggro scan), don't re-fetch it from the store. Pass the reference directly.
+
+### Position persistence needs test coverage
+The disconnect save, periodic save, and restore-on-join flows have zero unit tests. These are critical paths — the P0 was only caught by code review.
+
+### `setAttackTarget` API is awkward
+Callers must pre-check enemy existence and extract booleans before calling. The store should do the enemy lookup internally. (Tracked for enemy refactoring.)
+
+---
+
+## Next Steps / Backlog
+
+### Priority 1: Enemy Refactoring
+- Enemy spawns and behaviors are broken after ZoneService elimination
+- Fix enemy rendering, AI state machine, nest-based spawning
+- Have `EnemyStateStore.removeEnemy()` handle nest cleanup internally (callers shouldn't pass nests map)
+- Clean up `setAttackTarget` API — store should do enemy lookup internally
+
+### Priority 2: Persistence Test Coverage
+- Unit tests for `PlayerStateStore.addPlayerToZone()` position restore logic
+- Unit tests for `GameGateway.handleDisconnect()` position save flow
+- Unit tests for `GameLoopService` periodic position save
+- Unit tests for `CharacterService.saveCharacterPositions()`
+
+### Priority 3: Review Follow-ups (from PR #8)
+- Tighten movement rate limit (currently 50ms / 20 cmd/sec) when real player data is available
+- Consider separating position persistence from game loop thread if tick spikes appear
+- Add `PlayerStateStore` dedicated spec file (largest store, zero dedicated tests)
+
+---
+
 ## Environment Variables
 
 Copy `backend/.env.example` (or create `backend/.env`) with at minimum:
