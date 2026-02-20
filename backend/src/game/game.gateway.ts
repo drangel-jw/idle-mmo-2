@@ -668,18 +668,14 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       const targetEnemyId = data.targetId;
 
       // Set the target and state for ALL characters in the party
-      const targetEnemy = this.enemyStateStore.getEnemyInstanceById(zoneId, targetEnemyId);
       for (const character of partyCharactersData) {
            const success = this.playerStateStore.setAttackTarget(
               zoneId,
               character.id,
               targetEnemyId,
-              !!targetEnemy,
-              !!targetEnemy?.isDying,
           );
           if (!success) {
-               // ZoneService already logs warnings if enemy/char not found or state change fails
-               this.logger.warn(`[AttackCmd] Failed to set attack target for char ${character.id} via ZoneService (target: ${targetEnemyId}).`);
+               this.logger.warn(`[AttackCmd] Failed to set attack target for char ${character.id} (target: ${targetEnemyId}).`);
           }
       }
       // No need to directly manipulate character state here anymore

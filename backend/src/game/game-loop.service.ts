@@ -6,7 +6,6 @@ import { PlayerStateStore } from './stores/player-state.store';
 import { EnemyStateStore } from './stores/enemy-state.store';
 import { NestStateStore } from './stores/nest-state.store';
 import { DroppedItemStore } from './stores/dropped-item.store';
-import { SpawnNest } from './interfaces/spawn-nest.interface';
 import { SpellQueueStore, QueuedSpellCast } from './stores/spell-queue.store';
 import { CombatService } from './combat.service';
 import { AIService } from './ai.service';
@@ -342,10 +341,7 @@ export class GameLoopService implements OnApplicationShutdown {
                 for (const dyingEnemy of dyingEnemies) {
                     if (dyingEnemy.deathTimestamp && (now - dyingEnemy.deathTimestamp) >= GameConfig.SPAWNING.DYING_CLEANUP_MS) {
                         this.logger.debug(`[ENEMY DEATH] Cleaning up decayed enemy ${dyingEnemy.name} (${dyingEnemy.id}) after 10 seconds`);
-                        const nests = this.nestStateStore.getZoneNests(zoneId);
-                        const nestsById = new Map<string, SpawnNest>();
-                        nests.forEach(n => nestsById.set(n.id, n));
-                        this.enemyStateStore.removeEnemy(zoneId, dyingEnemy.id, nestsById);
+                        this.enemyStateStore.removeEnemy(zoneId, dyingEnemy.id);
                     }
                 }
 

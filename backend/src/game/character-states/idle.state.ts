@@ -55,8 +55,6 @@ export class IdleState implements ICharacterState {
                 zoneId,
                 character.id,
                 closestEnemy.id,
-                true, // closestEnemy was already validated alive from enemiesInZone
-                !!(closestEnemy as any).isDying,
             );
         } else {
             if (character.anchorX !== null && character.anchorY !== null) {

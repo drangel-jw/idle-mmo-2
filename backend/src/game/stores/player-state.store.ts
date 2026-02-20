@@ -4,6 +4,7 @@ import { Character } from '../../character/character.entity';
 import { User } from '../../user/user.entity';
 import { CharacterService } from '../../character/character.service';
 import { BroadcastService } from '../broadcast.service';
+import { EnemyStateStore } from './enemy-state.store';
 import { CharacterClass } from '../../common/enums/character-class.enum';
 
 // Re-export interfaces from here so callers can import from store
@@ -62,6 +63,8 @@ export class PlayerStateStore {
         @Inject(forwardRef(() => CharacterService))
         private readonly characterService: CharacterService,
         private readonly broadcastService: BroadcastService,
+        @Inject(forwardRef(() => EnemyStateStore))
+        private readonly enemyStateStore: EnemyStateStore,
     ) {}
 
     ensureZone(zoneId: string): void {
@@ -379,14 +382,15 @@ export class PlayerStateStore {
         return true;
     }
 
-    setAttackTarget(zoneId: string, characterId: string, targetEnemyId: string, enemyExists: boolean, enemyIsDying: boolean): boolean {
+    setAttackTarget(zoneId: string, characterId: string, targetEnemyId: string): boolean {
         const character = this.findCharacterInZone(zoneId, characterId);
         if (!character) {
             this.logger.warn(`[setAttackTarget] Character ${characterId} could not be located in zone ${zoneId}`);
             return false;
         }
 
-        if (!enemyExists || enemyIsDying) {
+        const enemy = this.enemyStateStore.getEnemyInstanceById(zoneId, targetEnemyId);
+        if (!enemy || enemy.isDying) {
             this.logger.warn(`[setAttackTarget] Target enemy ${targetEnemyId} not found or is dying in zone ${zoneId}.`);
             this.setCharacterState(zoneId, characterId, 'idle');
             return false;
