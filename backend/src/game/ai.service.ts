@@ -1,10 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ZoneService, ZoneCharacterState } from './zone.service';
-// import { EnemyService } from '../enemy/enemy.service'; // Keep commented for now
 import { EnemyInstance } from './interfaces/enemy-instance.interface';
-import { AIAction, AIActionMoveTo } from './interfaces/ai-action.interface'; // Added AIActionMoveTo
-import { Character } from 'src/character/character.entity'; // Needed for findCharacterFromPosition return type
-import { RuntimeCharacterData } from './zone.service'; // Correct import path
+import { AIAction, AIActionMoveTo } from './interfaces/ai-action.interface';
+import { Character } from 'src/character/character.entity';
+import { RuntimeCharacterData } from './stores/player-state.store';
+import { PlayerStateStore } from './stores/player-state.store';
+import { EnemyStateStore } from './stores/enemy-state.store';
 import { GameConfig } from '../common/config/game.config';
 
 @Injectable()
@@ -18,9 +18,8 @@ export class AIService {
   private readonly ENEMY_LEASH_DISTANCE_FACTOR = GameConfig.AI.LEASH_DISTANCE_FACTOR;
 
   constructor(
-    private readonly zoneService: ZoneService, // To get current state
-    // Potentially inject EnemyService if needed for template data like range/speed
-    // private readonly enemyService: EnemyService,
+    private readonly playerStateStore: PlayerStateStore,
+    private readonly enemyStateStore: EnemyStateStore,
   ) {}
 
   /**
@@ -32,7 +31,7 @@ export class AIService {
     // --- Always check if dead or dying first ---
     if (enemy.currentHealth <= 0 || enemy.isDying) {
         if (enemy.aiState !== 'DEAD') {
-             this.zoneService.setEnemyAiState(zoneId, enemy.id, 'DEAD');
+             this.enemyStateStore.setEnemyAiState(zoneId, enemy.id, 'DEAD');
              enemy.aiState = 'DEAD'; // Update local state
         }
         return { type: 'IDLE' };
@@ -40,7 +39,7 @@ export class AIService {
 
     // --- Handle Engaged States (Attacking, Chasing) ---
     if (enemy.aiState === 'ATTACKING' || enemy.aiState === 'CHASING') {
-        const targetCharacter = enemy.currentTargetId ? this.zoneService.getCharacterStateById(zoneId, enemy.currentTargetId) : null;
+        const targetCharacter = enemy.currentTargetId ? this.playerStateStore.getCharacterStateById(zoneId, enemy.currentTargetId) : null;
 
         // Check if current target is valid
         if (!targetCharacter || targetCharacter.currentHealth <= 0 || targetCharacter.state === 'dead') {
@@ -70,7 +69,7 @@ export class AIService {
                 // Cooldown finished: ATTACK!
                 this.setState(enemy, zoneId, 'ATTACKING', null); // Ensure state is attacking, clear movement target
                 enemy.lastAttackTime = now; // Record attack time
-                this.zoneService.updateEnemyAttackTime(zoneId, enemy.id, now); // Persist attack time
+                this.enemyStateStore.updateEnemyAttackTime(zoneId, enemy.id, now); // Persist attack time
                 return {
                     type: 'ATTACK',
                     targetEntityId: targetCharacter.id,
@@ -150,14 +149,14 @@ export class AIService {
     // Helper to set state and movement target consistently
     private setState(enemy: EnemyInstance, zoneId: string, newState: string, target: {x: number, y: number} | RuntimeCharacterData | null) {
         if (enemy.aiState !== newState) {
-             this.zoneService.setEnemyAiState(zoneId, enemy.id, newState);
+             this.enemyStateStore.setEnemyAiState(zoneId, enemy.id, newState);
              enemy.aiState = newState;
         }
         let targetPos: {x: number, y: number} | null = null;
         if (target && 'positionX' in target) { targetPos = { x: target.positionX!, y: target.positionY! }; }
         else if (target) { targetPos = target as {x: number, y: number} | null; }
         if (enemy.target?.x !== targetPos?.x || enemy.target?.y !== targetPos?.y) {
-             this.zoneService.setEnemyTarget(zoneId, enemy.id, targetPos);
+             this.enemyStateStore.setEnemyTarget(zoneId, enemy.id, targetPos);
              enemy.target = targetPos;
         }
     }
@@ -165,7 +164,7 @@ export class AIService {
     private findClosestPlayer(enemy: EnemyInstance, zoneId: string): RuntimeCharacterData | undefined {
         let closestCharacter: RuntimeCharacterData | undefined;
         let minDistance = Infinity;
-        const playersInZone = this.zoneService.getPlayersInZone(zoneId);
+        const playersInZone = this.playerStateStore.getPlayersInZone(zoneId);
 
         for (const player of playersInZone) {
             for (const character of player.characters) {
@@ -197,7 +196,7 @@ export class AIService {
     private findCharacterFromPosition(position: {x:number, y:number}, zoneId:string): Character | undefined {
           let foundCharacter: Character | undefined; // Use actual Character type if possible
 
-          const players = this.zoneService.getPlayersInZone(zoneId); // Gets Map<userId, RuntimePlayerData>
+          const players = this.playerStateStore.getPlayersInZone(zoneId); // Gets Map<userId, RuntimePlayerData>
           for(const player of players.values()){
               for(const char of player.characters){ // char is RuntimeCharacterData
                   // Use a small tolerance for floating point comparison?

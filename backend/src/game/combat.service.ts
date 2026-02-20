@@ -1,15 +1,16 @@
 // backend/src/game/combat.service.ts
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { ZoneService, RuntimeCharacterData } from './zone.service'; // Import ZoneService and RuntimeCharacterData
-import { EnemyInstance } from './interfaces/enemy-instance.interface'; // Import EnemyInstance
+import { RuntimeCharacterData } from './stores/player-state.store';
+import { PlayerStateStore } from './stores/player-state.store';
+import { EnemyStateStore } from './stores/enemy-state.store';
+import { DroppedItemStore } from './stores/dropped-item.store';
+import { EnemyInstance } from './interfaces/enemy-instance.interface';
 import { CombatResult } from './interfaces/combat.interface';
 import { BroadcastService } from './broadcast.service';
 import { LootService } from '../loot/loot.service';
 import { DroppedItem } from './interfaces/dropped-item.interface';
 import { v4 as uuidv4 } from 'uuid';
 import { GameConfig } from '../common/config/game.config';
-// No longer need InventoryService here
-// import { InventoryService } from '../inventory/inventory.service';
 
 // Define combat participants with appropriate stats
 type Combatant =
@@ -21,11 +22,11 @@ export class CombatService {
     private readonly logger = new Logger(CombatService.name);
 
     constructor(
-        private readonly zoneService: ZoneService,
+        private readonly playerStateStore: PlayerStateStore,
+        private readonly enemyStateStore: EnemyStateStore,
+        private readonly droppedItemStore: DroppedItemStore,
         private readonly broadcastService: BroadcastService,
         private readonly lootService: LootService,
-        // Remove InventoryService injection
-        // private readonly inventoryService: InventoryService,
     ) {}
 
     /**
@@ -57,7 +58,7 @@ export class CombatService {
         spellDamage: number,
         zoneId: string,
     ): Promise<Array<CombatResult & { enemyId: string; distance: number }>> {
-        const enemies = this.zoneService.getZoneEnemies(zoneId);
+        const enemies = this.enemyStateStore.getZoneEnemies(zoneId);
         const results: Array<CombatResult & { enemyId: string; distance: number }> = [];
 
         for (const enemy of enemies) {
@@ -140,7 +141,7 @@ export class CombatService {
                 // Applying damage to defender
                 if ('ownerId' in defender && defender.ownerId) { // Defender is Character
                     // Defender is a character
-                    const newHealth = await this.zoneService.updateCharacterHealth(defender.ownerId, defender.id, -damageDealt);
+                    const newHealth = await this.playerStateStore.updateCharacterHealth(defender.ownerId, defender.id, -damageDealt);
                     if (newHealth !== null) {
                         targetCurrentHealth = newHealth;
                         targetDied = targetCurrentHealth <= 0;
@@ -149,7 +150,7 @@ export class CombatService {
                     }
                 } else if ('id' in defender) { // Assume defender is Enemy
                     // Defender is an enemy
-                    const newHealth = await this.zoneService.updateEnemyHealth(zoneId, defender.id, -damageDealt);
+                    const newHealth = await this.enemyStateStore.updateEnemyHealth(zoneId, defender.id, -damageDealt);
                     if (newHealth !== null) {
                         targetCurrentHealth = newHealth;
                         targetDied = targetCurrentHealth <= 0;
@@ -279,7 +280,7 @@ export class CombatService {
                         despawnTime: despawnTime,
                     };
                     
-                    const added = this.zoneService.addDroppedItem(zoneId, droppedItem);
+                    const added = this.droppedItemStore.addDroppedItem(zoneId, droppedItem);
                     if (added) {
                         this.logger.debug(`Added item ${droppedItem.itemName} (${droppedItem.id}) at (${droppedItem.position.x}, ${droppedItem.position.y})`);
                         

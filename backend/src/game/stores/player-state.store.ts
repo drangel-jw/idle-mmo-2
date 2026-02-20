@@ -101,8 +101,10 @@ export class PlayerStateStore {
                 this.logger.error(`Character ${char.id} fetched from DB is missing the 'class' property! Defaulting.`);
             }
 
-            const spawnX = char.positionX ?? (100 + Math.random() * 50);
-            const spawnY = char.positionY ?? (100 + Math.random() * 50);
+            // Restore saved position if character was last in this zone, otherwise random spawn
+            const hasSavedPosition = char.currentZoneId === zoneId && char.positionX != null && char.positionY != null;
+            const spawnX = hasSavedPosition ? char.positionX! : (100 + Math.random() * 50);
+            const spawnY = hasSavedPosition ? char.positionY! : (100 + Math.random() * 50);
 
             const runtimeChar: RuntimeCharacterData = {
                 ...char,

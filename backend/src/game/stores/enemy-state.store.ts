@@ -56,6 +56,7 @@ export class EnemyStateStore {
             baseDefense: enemyTemplate.baseDefense,
             baseSpeed: enemyTemplate.baseSpeed,
             lootTableId: enemyTemplate.lootTableId,
+            spriteKey: enemyTemplate.spriteKey,
         };
         zoneEnemies.set(id, newEnemy);
         return newEnemy;
@@ -97,6 +98,7 @@ export class EnemyStateStore {
             baseDefense: template.baseDefense,
             baseSpeed: template.baseSpeed,
             lootTableId: template.lootTableId,
+            spriteKey: template.spriteKey,
             nestId: nest.id,
             anchorX: nest.center.x,
             anchorY: nest.center.y,

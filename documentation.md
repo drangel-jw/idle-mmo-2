@@ -1,7 +1,7 @@
 ## **Idle Browser MMO - Project Documentation**
 
-**Version:** 0.8 (XP and Leveling)
-**Date:** 2025-04-04 (Adjust date as needed)
+**Version:** 0.9 (Architecture Refactoring & Technical Improvements)
+**Date:** 2025-04-04 (Last major update: 2026-02-19)
 
 **1. Overview**
 
@@ -31,8 +31,10 @@ This document outlines the architecture, database schema, and development plan f
     *   **Item Despawn:** Dropped items are automatically removed after a set duration, with events broadcasted to all clients.
     *   Broadcasts updates (`entityUpdate`).
 *   **Client-Side Interpolation:** Frontend smoothly interpolates sprites (`CharacterSprite`, `EnemySprite`).
-*   **Multiplayer Zones:** Multiple players and enemies inhabit shared zones (`ZoneService`).
-    *   **Runtime State:** `ZoneService` tracks character state (including combat state like `state`, **`commandState`**, `attackTargetId`, `targetItemId`, `anchorX/Y`, `lastAttackTime`, `timeOfDeath`) and enemy state.
+*   **Multiplayer Zones:** Multiple players and enemies inhabit shared zones. `ZoneService` handles zone lifecycle only; runtime state lives in dedicated stores (`PlayerStateStore`, `EnemyStateStore`, `NestStateStore`, `DroppedItemStore`, `SpellQueueStore`).
+    *   **Runtime State:** `PlayerStateStore` tracks character state (including combat state like `state`, **`commandState`**, `attackTargetId`, `targetItemId`, `anchorX/Y`, `lastAttackTime`, `timeOfDeath`). `EnemyStateStore` tracks enemy instances with `spriteKey` from templates.
+    *   **Position Persistence:** Player positions are saved periodically (default 30s) and on disconnect, restored on zone join.
+    *   **Movement Validation:** Movement commands are validated server-side (NaN/Infinity rejection, zone bounds clamping, rate limiting).
 *   **Real-time Sync:** Players see others join (`playerJoined`), leave (`playerLeft`), move/update (`entityUpdate`), and die (`entityDied`). New players receive existing enemy state on join. **Includes XP and Level updates.**
 *   **Chat:** Zone-scoped real-time text chat with chat bubbles.
 *   **Enemy Templates:** Defined in database (`Enemy` entity, `EnemyModule`, `EnemyService`).
@@ -99,34 +101,46 @@ graph TD
         GLS -->|3. Process Movement| MS[MovementService];
         GLS -->|4. Process Spawns| SpS[SpawningService];
         GLS -->|5. Flush Events| BS[BroadcastService];
-        
+        GLS -->|6. Save Positions| CharSvc[CharacterService];
+
         CSS -->|Calls| CS[CombatService];
-        CSS -->|Reads| ZS[ZoneService];
-        
+        CSS -->|Reads/Updates| PSS[PlayerStateStore];
+        CSS -->|Reads| ESStore[EnemyStateStore];
+        CSS -->|Reads| DIS[DroppedItemStore];
+
         ESS -->|Calls| AIS[AIService];
         ESS -->|Calls| CS;
-        ESS -->|Reads/Updates| ZS;
-        
-        AIS -->|Reads| ZS;
-        
+        ESS -->|Reads| PSS;
+        ESS -->|Reads/Updates| ESStore;
+
+        AIS -->|Reads| PSS;
+        AIS -->|Reads| ESStore;
+
         MS;  // MovementService is mostly self-contained logic
-        
-        SpS -->|Calls| ZS;
-        SpS -->|Calls| ES[EnemyService];
-        
-        CS -->|Updates| ZS;
-        CS -->|Reads| ES;
-        
+
+        SpS -->|Calls| ESStore;
+        SpS -->|Calls| NSS[NestStateStore];
+
+        CS -->|Updates| PSS;
+        CS -->|Updates| ESStore;
+        CS -->|Updates| DIS;
+
         BS -->|Emits via| SIOServer(Socket.IO Server);
 
-        ZS -->|Reads/Updates| DB[(Database - Implicit)];
-        ES -->|Reads| DB;
-        
+        ZS[ZoneService] -->|Creates zones in| PSS;
+        ZS -->|Creates zones in| ESStore;
+        ZS -->|Creates zones in| NSS;
+        ZS -->|Creates zones in| DIS;
+        ZS -->|Creates zones in| SQS[SpellQueueStore];
+
     end
-    
+
     GameGateway -->|Starts| GLS;
     GameGateway -->|Sets Server| BS;
-    
+    GameGateway -->|Zone lifecycle| ZS;
+    GameGateway -->|Player state| PSS;
+    GameGateway -->|Enemy lookups| ESStore;
+
     style GLS fill:#f9f,stroke:#333,stroke-width:2px
     style CSS fill:#ccf,stroke:#333,stroke-width:1px
     style ESS fill:#ccf,stroke:#333,stroke-width:1px
@@ -136,9 +150,13 @@ graph TD
     style CS fill:#eef,stroke:#333,stroke-width:1px
     style AIS fill:#eef,stroke:#333,stroke-width:1px
     style ZS fill:#ddf,stroke:#333,stroke-width:1px
-    style ES fill:#ddf,stroke:#333,stroke-width:1px
+    style PSS fill:#afa,stroke:#333,stroke-width:1px
+    style ESStore fill:#afa,stroke:#333,stroke-width:1px
+    style NSS fill:#afa,stroke:#333,stroke-width:1px
+    style DIS fill:#afa,stroke:#333,stroke-width:1px
+    style SQS fill:#afa,stroke:#333,stroke-width:1px
 ```
-*(Note: This diagram focuses on the backend game loop interactions. Frontend interaction remains primarily via WebSocket events managed by `GameGateway` and `BroadcastService`)*
+*(Note: Services inject stores directly — ZoneService only handles zone lifecycle (createZone, getActiveZoneIds). All 35+ pass-through methods have been eliminated.)*
 
 **5. Backend Module Breakdown (Updated)**
 
@@ -150,14 +168,20 @@ graph TD
 *   `GameModule`: Core real-time logic.
     *   `GameGateway`: **Reduced Role.** Handles WebSocket connections, auth middleware, routing client commands (`enterZone`, `selectParty`, `moveCommand`, `sendMessage`, `attackCommand`, **`moveInventoryItem`, `dropInventoryItem`, `pickupItemCommand`, `equipItemCommand`, `unequipItem`, `requestEquipment`**) to update `ZoneService` / `CharacterService` / `InventoryService` state. Initializes the `GameLoopService`. Injects `ZoneService`, `GameLoopService`, `BroadcastService`, `CharacterService` (for party validation), `UserService`, `JwtService`, **`InventoryService`**.
     *   `GameLoopService`: **Orchestrator.** Runs the main game tick loop (`tickGameLoop`). Iterates through zones, players, enemies. Calls specialized services for character state, enemy state, movement, and spawning. Calls `BroadcastService` to flush events at the end of each zone tick. Injects `ZoneService`, `CharacterStateService`, `EnemyStateService`, `MovementService`, `SpawningService`, `BroadcastService`.
-    *   `CharacterStateService`: **NEW.** Handles processing a single character's state per tick (death, respawn, regen, leashing, state machine logic, aggro, initiating attacks, **item looting logic**). Injects `ZoneService`, `CombatService`, **`InventoryService`, `BroadcastService`**.
-    *   `EnemyStateService`: **NEW.** Handles processing a single enemy's state per tick (getting AI action, executing attacks). Injects `ZoneService`, `CombatService`, `AIService`.
-    *   `MovementService`: **NEW.** Calculates new entity positions based on current position, target, speed, and delta time. Used by `GameLoopService` for both characters and enemies.
-    *   `SpawningService`: **NEW.** Handles logic for checking spawn nest timers and triggering new enemy spawns via `ZoneService`. Injects `ZoneService`.
-    *   `BroadcastService`: **NEW.** Queues game events (entity updates, deaths, spawns, combat actions) per zone during a tick. Flushes queued events by emitting formatted WebSocket messages via the Socket.IO server instance at the end of each zone tick. 
-    *   `ZoneService`: Manages **runtime state** of all dynamic entities (players, enemies, items-TODO) within zones in memory (Maps). Handles adding/removing entities, tracking positions, targets, health, combat state, etc. Provides state snapshots and update methods. Used by many other services. Injects `EnemyService`.
-    *   `CombatService`: Handles combat resolution logic (`handleAttack`, `calculateDamage`). Injects `ZoneService`, `EnemyService`.
-    *   `AIService`: Handles AI decision-making logic (`updateEnemyAI` for enemies). Returns AI actions. Injects `ZoneService`.
+    *   `CharacterStateService`: Handles processing a single character's state per tick (death, respawn, regen, leashing, state machine logic, aggro, initiating attacks, **item looting logic**). Injects `PlayerStateStore`, `EnemyStateStore`, `DroppedItemStore`, `CombatService`, **`InventoryService`, `BroadcastService`**.
+    *   `EnemyStateService`: Handles processing a single enemy's state per tick (getting AI action, executing attacks). Injects `PlayerStateStore`, `EnemyStateStore`, `CombatService`, `AIService`.
+    *   `MovementService`: Calculates new entity positions based on current position, target, speed, and delta time. Used by `GameLoopService` for both characters and enemies.
+    *   `SpawningService`: Handles logic for checking spawn nest timers and triggering new enemy spawns. Injects `EnemyStateStore`, `NestStateStore`.
+    *   `BroadcastService`: Queues game events (entity updates, deaths, spawns, combat actions) per zone during a tick. Flushes queued events by emitting formatted WebSocket messages via the Socket.IO server instance at the end of each zone tick.
+    *   `ZoneService`: **Thin lifecycle manager (~40 lines).** Only handles `createZone()` (ensures all stores are initialized) and `getActiveZoneIds()`. All 35+ pass-through methods have been eliminated — callers inject stores directly. Injects all stores (`PlayerStateStore`, `EnemyStateStore`, `NestStateStore`, `DroppedItemStore`, `SpellQueueStore`).
+    *   **State Stores:** In-memory stores that hold runtime state per zone:
+        *   `PlayerStateStore`: Player/character runtime state (positions, health, combat state, targets). Handles **position persistence** — restores saved positions on zone join.
+        *   `EnemyStateStore`: Enemy instances spawned from templates. Populates `spriteKey` from enemy templates.
+        *   `NestStateStore`: Spawn nest state (capacity tracking, respawn timers).
+        *   `DroppedItemStore`: Dropped items on the ground.
+        *   `SpellQueueStore`: Queued spell casts (capped at 50/zone/tick).
+    *   `CombatService`: Handles combat resolution logic (`handleAttack`, `calculateDamage`, `handleSpellDamage`). Injects `PlayerStateStore`, `EnemyStateStore`, `DroppedItemStore`, `BroadcastService`, `LootService`.
+    *   `AIService`: Handles AI decision-making logic (`updateEnemyAI` for enemies). Returns AI actions. Injects `PlayerStateStore`, `EnemyStateStore`.
 *   **`InventoryModule`:** Manages item instances (`InventoryItem` entity) and related logic (`InventoryService`). Exports service. **Injects `ItemModule`**. **Provides `inventorySlot` management.**
 *   **`ItemModule`:** Manages item templates (`ItemTemplate` entity). Exports service.
 *   `DebugModule`: Provides endpoints for inspecting runtime state (`/debug/zones`). Injects `ZoneService` (via `GameModule` import).
@@ -431,7 +455,7 @@ export class InventoryItem {
 
 **9. Key Concepts / Reusable Patterns (Updated)**
 
-*   **Entity Runtime State Management (`ZoneService`):** Core responsibility. Holds in-memory `Map`s for players and enemies within zones. State includes position, target, current health, combat state (`state`, `attackTargetId`, `anchorX/Y`, `lastAttackTime`, `timeOfDeath`), AI state. **Inventory/Equipment state is primarily managed via DB persistence (`InventoryItem` entity with `inventorySlot`, `equippedByCharacterId`, `equippedSlotId`) and broadcast events (`inventoryUpdate`, `equipmentUpdate`), not directly tracked in `ZoneService`.**
+*   **Entity Runtime State Management (Stores):** Core responsibility distributed across dedicated stores. `PlayerStateStore` holds character runtime state (position, target, health, combat state). `EnemyStateStore` holds enemy instances. `DroppedItemStore` holds ground items. `NestStateStore` tracks spawn nests. `SpellQueueStore` holds queued spells. `ZoneService` is only a lifecycle manager (~40 lines) — it creates zones and returns active zone IDs. **Inventory/Equipment state is primarily managed via DB persistence (`InventoryItem` entity with `inventorySlot`, `equippedByCharacterId`, `equippedSlotId`) and broadcast events (`inventoryUpdate`, `equipmentUpdate`), not directly tracked in stores.**
 *   **Service-Based Logic:** Core game mechanics are encapsulated in highly granular services:
     *   `CharacterStateService`, `EnemyStateService`: Handle entity-specific state logic.
     *   `MovementService`: Handles position calculation.
@@ -458,7 +482,16 @@ export class InventoryItem {
 
 *   Remains multi-layered (Unit, Integration, E2E) primarily focused on backend (Jest).
 *   Frontend unit testing (Vitest/Jest) for utilities. Manual testing for scenes.
-*   **Status:** Unit/Integration test implementation is **active**. Tests have been added for the refactored game loop services (`MovementService`, `SpawningService`, `BroadcastService`, `CharacterStateService`, `EnemyStateService`) and related refactored services (`ZoneService`, `CombatService`).
+*   **Status:** Unit/Integration test implementation is **active**. 12 test suites pass with 110 tests total. Tests cover:
+    *   `ZoneService` (stripped lifecycle manager)
+    *   `SpawningService` (nest-based spawning via `EnemyStateStore` + `NestStateStore`)
+    *   `EnemyStateStore` (add/remove/update enemies, nest integration, spriteKey from templates)
+    *   `CombatService` (damage calculation, handleAttack for enemy→char and char→enemy, handleSpellDamage, death effects)
+    *   `EnemyStateService` (AI actions: IDLE, MOVE_TO, ATTACK with valid/dead/missing targets)
+    *   `CharacterStateService` (death, respawn, health regen, leashing, auto-aggro, attacking, invalid targets)
+    *   `GameGateway` (WebSocket connection, auth middleware)
+    *   `MovementService`, `BroadcastService`, and other services
+*   **Testing pattern note:** Store mocks in `CharacterStateService` tests must mutate the shared character object (via a `currentTestCharacter` reference) to mimic real store behavior where methods like `setCharacterState` modify the object in-place.
 *   **Policy:** Moving forward, new features or significant refactors **must** include corresponding unit and/or integration tests to ensure correctness and prevent regressions.
 
 **11. Core Real-time Update Flow (Example: XP Gain & Level Up)**
@@ -537,7 +570,16 @@ export class InventoryItem {
 12. [X] Frontend: Implement logic in `UIScene` to listen for curated events from `GameScene` and update party panel bars/text.
 13. [X] Frontend: Add visual flash effect on level up (`UIScene`).
 
-**➡️ Phase 7 Refinements (Current Focus)**
+**➡️ Phase 7.5: Architecture Refactoring & Technical Improvements (Complete)**
+1.  [X] **spriteKey wiring:** `EnemyStateStore.addEnemy()` and `addEnemyFromNest()` now populate `spriteKey` from enemy templates. Frontend `EntityManager` simplified to use `enemyData.spriteKey ?? 'goblin'` instead of hardcoded UUID→sprite map.
+2.  [X] **Movement command validation:** `GameGateway.handleMoveCommand()` rejects NaN/Infinity, clamps to zone bounds, and rate-limits commands per player (`GameConfig.MOVEMENT.COMMAND_RATE_LIMIT_MS`).
+3.  [X] **ZoneService pass-through elimination:** All 35+ pass-through methods removed from `ZoneService` (~225 lines → ~40 lines). All callers now inject stores (`PlayerStateStore`, `EnemyStateStore`, etc.) directly.
+4.  [X] **Player position persistence:** Positions saved periodically (`GameConfig.PERSISTENCE.POSITION_SAVE_INTERVAL_MS`, default 30s) and on disconnect. Restored on zone join if character was in the same zone.
+5.  [X] **Unit test overhaul:** All test suites updated to use store-based architecture. 12 suites, 110 tests passing.
+
+**⚠️ Known Issue: Enemy spawns and behaviors are broken** after the ZoneService refactoring. Enemy rendering, AI, and spawn logic need a dedicated refactoring pass. **This is planned as the next priority.**
+
+**➡️ Phase 7 Refinements**
 
 1.  **Inventory Sorting (High Priority - IN PROGRESS):**
     *   [ ] Frontend (`UIScene`): Add "Sort by Name" / "Sort by Type" buttons to the inventory window HTML, next to pagination controls.

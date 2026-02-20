@@ -17,15 +17,20 @@ import { UserService } from '../user/user.service'; // Import UserService
 import { User } from '../user/user.entity'; // Import User entity
 import { CharacterService } from '../character/character.service'; // Import CharacterService
 import { Character } from '../character/character.entity'; // Import Character entity
-import { ZoneService, ZoneCharacterState, RuntimeCharacterData } from './zone.service'; // Import ZoneService & RuntimeCharacterData
+import { ZoneService } from './zone.service';
+import { ZoneCharacterState, RuntimeCharacterData } from './stores/player-state.store';
+import { PlayerStateStore } from './stores/player-state.store';
+import { EnemyStateStore } from './stores/enemy-state.store';
+import { DroppedItemStore } from './stores/dropped-item.store';
+import { SpellQueueStore } from './stores/spell-queue.store';
 import * as sanitizeHtml from 'sanitize-html';
-import { GameLoopService } from './game-loop.service'; // Import the new GameLoopService
-import { InventoryService } from '../inventory/inventory.service'; // Import InventoryService
-import { BroadcastService } from './broadcast.service'; // Import BroadcastService
-import { calculateDistance } from './utils/geometry.utils'; // Import distance util
-import { EquipmentSlot } from '../item/item.types'; // <-- Import EquipmentSlot
-import { AbilityService } from '../abilities/ability.service'; // Import AbilityService
-import { CombatService } from './combat.service'; // Import CombatService
+import { GameLoopService } from './game-loop.service';
+import { InventoryService } from '../inventory/inventory.service';
+import { BroadcastService } from './broadcast.service';
+import { calculateDistance } from './utils/geometry.utils';
+import { EquipmentSlot } from '../item/item.types';
+import { AbilityService } from '../abilities/ability.service';
+import { CombatService } from './combat.service';
 import { GameConfig } from '../common/config/game.config';
 
 // Add pickup range constant
@@ -77,17 +82,22 @@ interface SortInventoryPayload { // NEW Payload Interface
 export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer() server: Server;
   private logger: Logger = new Logger('GameGateway');
+  private moveCommandTimestamps: Map<string, number> = new Map();
 
   constructor(
-    private jwtService: JwtService, // Inject JwtService
-    private userService: UserService, // Inject UserService
-    private characterService: CharacterService, // Inject CharacterService
-    private zoneService: ZoneService, // Inject ZoneService
-    private gameLoopService: GameLoopService, // Inject GameLoopService
-    private inventoryService: InventoryService, // Inject InventoryService
-    private broadcastService: BroadcastService, // Inject BroadcastService
-    private abilityService: AbilityService, // Inject AbilityService
-    private combatService: CombatService, // Inject CombatService
+    private jwtService: JwtService,
+    private userService: UserService,
+    private characterService: CharacterService,
+    private zoneService: ZoneService,
+    private readonly playerStateStore: PlayerStateStore,
+    private readonly enemyStateStore: EnemyStateStore,
+    private readonly droppedItemStore: DroppedItemStore,
+    private readonly spellQueueStore: SpellQueueStore,
+    private gameLoopService: GameLoopService,
+    private inventoryService: InventoryService,
+    private broadcastService: BroadcastService,
+    private abilityService: AbilityService,
+    private combatService: CombatService,
   ) {}
 
   afterInit(server: Server) {
@@ -146,10 +156,34 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     const username = user?.username || 'Unknown';
     this.logger.log(`Client disconnected: ${client.id} (${username})`);
     delete client.data.currentZoneId;
+    // Clean up rate limit tracking
+    if (user?.id) {
+      this.moveCommandTimestamps.delete(user.id);
+    }
+    // Save character positions before removal
+    if (user?.id) {
+      const characters = this.playerStateStore.getPlayerCharacters(user.id);
+      const zoneId = client.data.currentZoneId as string;
+      if (characters && characters.length > 0) {
+        const positionUpdates = characters
+          .filter(c => c.positionX !== null && c.positionY !== null)
+          .map(c => ({
+            characterId: c.id,
+            positionX: c.positionX!,
+            positionY: c.positionY!,
+            currentZoneId: zoneId || 'startZone',
+          }));
+        if (positionUpdates.length > 0) {
+          this.characterService.saveCharacterPositions(positionUpdates).catch(err => {
+            this.logger.error(`Failed to save positions on disconnect for ${username}: ${err.message}`);
+          });
+        }
+      }
+    }
     // Remove player from zone and notify others
-    const removalInfo = this.zoneService.removePlayerFromZone(client);
+    const removalInfo = this.playerStateStore.removePlayerFromZone(client);
     if (removalInfo) {
-      this.server.to(removalInfo.zoneId).emit('playerLeft', { playerId: removalInfo.userId }); // Broadcast user ID leaving
+      this.server.to(removalInfo.zoneId).emit('playerLeft', { playerId: removalInfo.userId });
       this.logger.log(`Broadcast playerLeft for ${username} in zone ${removalInfo.zoneId}`);
     }
     // Clean up user state later (e.g., remove from zone)
@@ -184,14 +218,14 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     }
 
     // 1. Find the dropped item in the current zone
-    const droppedItem = this.zoneService.getDroppedItemById(zoneId, itemIdToPickup); // Assuming getDroppedItemById exists
+    const droppedItem = this.droppedItemStore.getDroppedItemById(zoneId, itemIdToPickup);
     if (!droppedItem) {
       // Dropped item not found in zone
       return { success: false, message: 'Item not found or already picked up.' };
     }
 
     // 2. Find all player characters currently in the zone state (not just from client.data)
-    const playerCharactersInZone = this.zoneService.getPlayerCharacters(user.id, zoneId);
+    const playerCharactersInZone = this.playerStateStore.getPlayerCharacters(user.id, zoneId);
     if (!playerCharactersInZone || playerCharactersInZone.length === 0) {
         this.logger.error(`[Pickup Command] User ${user.id} has no characters in zone ${zoneId} state.`);
         return { success: false, message: 'Characters not found in zone.' };
@@ -226,7 +260,7 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     // Clear any potential loot_area command state when issuing a specific pickup
     closestChar.commandState = null; 
 
-    const success = this.zoneService.setCharacterLootTarget(
+    const success = this.playerStateStore.setCharacterLootTarget(
         user.id,
         closestChar.id,
         itemIdToPickup,
@@ -526,12 +560,13 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       // TODO: Add validation if player is already in another zone?
 
       this.logger.log(`User ${user.username} attempting to enter zone ${zoneId}`);
-      const existingEnemies = this.zoneService.getZoneEnemies(zoneId);
+      this.zoneService.createZone(zoneId); // Ensure zone exists before any operations
+      const existingEnemies = this.enemyStateStore.getZoneEnemies(zoneId);
       // 1. Get state of other players already in the zone BEFORE adding the new player
-      const playersAlreadyInZone = this.zoneService.getZoneCharacterStates(zoneId);
+      const playersAlreadyInZone = this.playerStateStore.getZoneCharacterStates(zoneId);
 
       // 2. Add the new player to the zone state
-      await this.zoneService.addPlayerToZone(zoneId, client, user, selectedCharacters);
+      await this.playerStateStore.addPlayerToZone(zoneId, client, user, selectedCharacters);
 
       // 3. Notify OTHERS in the zone that a new player joined
       // Prepare data about the new player's characters
@@ -565,10 +600,28 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
       if (!user || !partyCharactersData || partyCharactersData.length === 0 || !zoneId) {
           this.logger.warn(`Move command ignored for user ${user?.username}: Invalid state (user, party, or zone).`);
-          return; // Exit early
+          return;
       }
 
-      const formationCenter = data.target;
+      // Validate coordinates are finite numbers
+      if (!data?.target || !Number.isFinite(data.target.x) || !Number.isFinite(data.target.y)) {
+          this.logger.warn(`Move command rejected for user ${user.username}: non-finite coordinates`);
+          return;
+      }
+
+      // Rate limit move commands per player
+      const now = Date.now();
+      const lastCommandTime = this.moveCommandTimestamps.get(user.id) ?? 0;
+      if (now - lastCommandTime < GameConfig.MOVEMENT.COMMAND_RATE_LIMIT_MS) {
+          return; // Silently drop rapid commands
+      }
+      this.moveCommandTimestamps.set(user.id, now);
+
+      // Clamp target to zone bounds
+      const formationCenter = {
+          x: Math.max(0, Math.min(GameConfig.ZONE.WIDTH, data.target.x)),
+          y: Math.max(0, Math.min(GameConfig.ZONE.HEIGHT, data.target.y)),
+      };
       const formationOffset = GameConfig.MOVEMENT.FORMATION_OFFSET;
 
       // --- Calculate target positions --- 
@@ -586,7 +639,7 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
       // --- Use ZoneService to set targets and state --- 
       for (const target of targets) {
-          const success = this.zoneService.setMovementTarget(
+          const success = this.playerStateStore.setMovementTarget(
               zoneId,
               target.charId,
               target.targetX,
@@ -615,13 +668,15 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
       const targetEnemyId = data.targetId;
 
-      // --- Use ZoneService to set targets and state --- 
       // Set the target and state for ALL characters in the party
+      const targetEnemy = this.enemyStateStore.getEnemyInstanceById(zoneId, targetEnemyId);
       for (const character of partyCharactersData) {
-           const success = this.zoneService.setAttackTarget(
+           const success = this.playerStateStore.setAttackTarget(
               zoneId,
               character.id,
-              targetEnemyId
+              targetEnemyId,
+              !!targetEnemy,
+              !!targetEnemy?.isDying,
           );
           if (!success) {
                // ZoneService already logs warnings if enemy/char not found or state change fails
@@ -720,7 +775,7 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       return { success: false, message: 'Invalid state.' };
     }
 
-    const playerCharactersInZone = this.zoneService.getPlayerCharacters(user.id, zoneId);
+    const playerCharactersInZone = this.playerStateStore.getPlayerCharacters(user.id, zoneId);
     if (!playerCharactersInZone || playerCharactersInZone.length === 0) {
         this.logger.error(`[Loot All] User ${user.id} has no characters in zone ${zoneId} state.`);
         return { success: false, message: 'Characters not found in zone.' };
@@ -732,7 +787,7 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     // Iterate through each character and attempt to set their state to looting_area
     for (const char of playerCharactersInZone) {
         if (char.state !== 'dead') {
-            const success = this.zoneService.setCharacterLootArea(user.id, char.id);
+            const success = this.playerStateStore.setCharacterLootArea(user.id, char.id);
             if (success) {
                 charactersSetToLoot++;
             } else {
@@ -827,7 +882,7 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       }
 
       // Get user's characters in the zone
-      const userCharacters = this.zoneService.getPlayerCharactersInZone(zoneId, user.id);
+      const userCharacters = this.playerStateStore.getPlayerCharactersInZone(zoneId, user.id);
       if (!userCharacters || userCharacters.length === 0) {
         return { success: false, message: 'No characters in zone' };
       }
@@ -836,7 +891,8 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       const caster = userCharacters[0];
 
       // Queue spell cast for processing by game loop (like move/attack commands)
-      const success = this.zoneService.queueSpellCast(zoneId, caster.id, abilityId, targetX, targetY);
+      const queuedSpell = this.spellQueueStore.queueSpellCast(zoneId, caster.id, abilityId, targetX, targetY);
+      const success = queuedSpell !== null;
       
       if (success) {
         this.logger.log(`🎯 SPELL QUEUED: User ${user.username} queued ${ability.name} at (${targetX}, ${targetY}) with character ${caster.id}`);

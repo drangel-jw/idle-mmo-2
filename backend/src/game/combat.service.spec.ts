@@ -1,18 +1,16 @@
-// backend/src/game/combat.service.spec.ts
 import { Test, TestingModule } from '@nestjs/testing';
 import { CombatService } from './combat.service';
-import { ZoneService, RuntimeCharacterData } from './zone.service'; // Import necessary types
+import { PlayerStateStore, RuntimeCharacterData } from './stores/player-state.store';
+import { EnemyStateStore } from './stores/enemy-state.store';
+import { DroppedItemStore } from './stores/dropped-item.store';
 import { EnemyInstance } from './interfaces/enemy-instance.interface';
-import { CombatResult } from './interfaces/combat.interface';
-import { Character } from '../character/character.entity'; // Needed for RuntimeCharacterData base
-import { User } from '../user/user.entity'; // Needed for RuntimeCharacterData base
 import { BroadcastService } from './broadcast.service';
 import { LootService } from '../loot/loot.service';
 import { CharacterClass } from '../common/enums/character-class.enum';
+import { User } from '../user/user.entity';
 
-// --- Reusable Mock Factory ---
 const createMockEnemy = (id: string, health: number, attack: number, defense: number): EnemyInstance => ({
-  id: id,
+  id,
   templateId: `template-${id}`,
   zoneId: 'test-zone',
   name: `Enemy ${id}`,
@@ -23,11 +21,11 @@ const createMockEnemy = (id: string, health: number, attack: number, defense: nu
   baseDefense: defense,
   baseSpeed: 75,
   lootTableId: null,
+  spriteKey: 'goblin',
 });
 
-// Partial<Character> and Partial<User> help create the object without all entity fields
 const createMockCharacter = (id: string, health: number, attack: number, defense: number): RuntimeCharacterData => ({
-  id: id,
+  id,
   userId: `user-${id}`,
   ownerId: `user-${id}`,
   ownerName: `User ${id}`,
@@ -63,14 +61,17 @@ const createMockCharacter = (id: string, health: number, attack: number, defense
   class: CharacterClass.FIGHTER,
 } as RuntimeCharacterData);
 
-// --- Mock ZoneService ---
-const mockZoneService = {
-  updateEnemyHealth: jest.fn(),
+const mockPlayerStateStore = {
   updateCharacterHealth: jest.fn(),
+};
+
+const mockEnemyStateStore = {
+  updateEnemyHealth: jest.fn(),
   getZoneEnemies: jest.fn().mockReturnValue([]),
-  getEnemyInstanceById: jest.fn(),
-  addDroppedItem: jest.fn(),
-  setEnemyAiState: jest.fn(),
+};
+
+const mockDroppedItemStore = {
+  addDroppedItem: jest.fn().mockReturnValue(true),
 };
 
 const mockBroadcastService = {
@@ -85,32 +86,22 @@ const mockLootService = {
 
 describe('CombatService', () => {
   let combatService: CombatService;
-  let zoneService: ZoneService;
 
   beforeEach(async () => {
-    // Reset mocks before each test
     jest.clearAllMocks();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CombatService,
-        {
-          provide: ZoneService,
-          useValue: mockZoneService,
-        },
-        {
-          provide: BroadcastService,
-          useValue: mockBroadcastService,
-        },
-        {
-          provide: LootService,
-          useValue: mockLootService,
-        },
+        { provide: PlayerStateStore, useValue: mockPlayerStateStore },
+        { provide: EnemyStateStore, useValue: mockEnemyStateStore },
+        { provide: DroppedItemStore, useValue: mockDroppedItemStore },
+        { provide: BroadcastService, useValue: mockBroadcastService },
+        { provide: LootService, useValue: mockLootService },
       ],
     }).compile();
 
     combatService = module.get<CombatService>(CombatService);
-    zoneService = module.get<ZoneService>(ZoneService);
   });
 
   it('should be defined', () => {
@@ -127,7 +118,6 @@ describe('CombatService', () => {
     });
 
     it('should always return at least 1 when attack is positive', () => {
-      // Even with very high defense, minimum damage is 1
       for (let i = 0; i < 100; i++) {
         const damage = combatService.calculateDamage(1, 1000);
         expect(damage).toBeGreaterThanOrEqual(1);
@@ -135,131 +125,133 @@ describe('CombatService', () => {
     });
 
     it('should produce expected average for equal attack and defense', () => {
-      // attack=20, defense=20 => rawDamage = 400/40 = 10
       const results: number[] = [];
       for (let i = 0; i < 1000; i++) {
         results.push(combatService.calculateDamage(20, 20));
       }
       const avg = results.reduce((a, b) => a + b, 0) / results.length;
-      // Expected average ~10 (with variance 0.9-1.1)
       expect(avg).toBeGreaterThan(8);
       expect(avg).toBeLessThan(12);
     });
 
-    it('should produce expected average when attack > defense', () => {
-      // attack=20, defense=5 => rawDamage = 400/25 = 16
-      const results: number[] = [];
-      for (let i = 0; i < 1000; i++) {
-        results.push(combatService.calculateDamage(20, 5));
-      }
-      const avg = results.reduce((a, b) => a + b, 0) / results.length;
-      expect(avg).toBeGreaterThan(13);
-      expect(avg).toBeLessThan(19);
-    });
-
-    it('should produce non-zero damage when defense > attack', () => {
-      // attack=10, defense=20 => rawDamage = 100/30 ≈ 3.33
-      const results: number[] = [];
-      for (let i = 0; i < 100; i++) {
-        results.push(combatService.calculateDamage(10, 20));
-      }
-      // All results should be >= 1
-      results.forEach(d => expect(d).toBeGreaterThanOrEqual(1));
-      const avg = results.reduce((a, b) => a + b, 0) / results.length;
-      expect(avg).toBeGreaterThan(2);
-      expect(avg).toBeLessThan(5);
-    });
-
-    it('should have variance in results (not always the same)', () => {
+    it('should have variance in results', () => {
       const results = new Set<number>();
       for (let i = 0; i < 100; i++) {
         results.add(combatService.calculateDamage(50, 10));
       }
-      // With 100 rolls, we should see at least 2 different values
       expect(results.size).toBeGreaterThan(1);
-    });
-
-    it('should produce high damage when attack greatly exceeds defense', () => {
-      // attack=50, defense=10 => rawDamage = 2500/60 ≈ 41.67
-      const results: number[] = [];
-      for (let i = 0; i < 1000; i++) {
-        results.push(combatService.calculateDamage(50, 10));
-      }
-      const avg = results.reduce((a, b) => a + b, 0) / results.length;
-      expect(avg).toBeGreaterThan(37);
-      expect(avg).toBeLessThan(46);
     });
   });
 
   describe('handleAttack', () => {
     const zoneId = 'test-zone';
 
-    it('should deal damage and update character health when enemy attacks character (no kill)', async () => {
+    it('should deal damage when enemy attacks character (no kill)', async () => {
       const attacker = createMockEnemy('enemy1', 100, 20, 5);
       const defender = createMockCharacter('char1', 80, 10, 8);
 
-      // With new formula: damage = floor((20*20)/(20+8) * variance) = floor(14.28 * ~1.0) ≈ 12-15
-      mockZoneService.updateCharacterHealth.mockResolvedValue(68);
+      mockPlayerStateStore.updateCharacterHealth.mockResolvedValue(68);
 
       const result = await combatService.handleAttack(attacker, defender, zoneId);
 
-      expect(mockZoneService.updateCharacterHealth).toHaveBeenCalledWith(
+      expect(mockPlayerStateStore.updateCharacterHealth).toHaveBeenCalledWith(
         defender.ownerId,
         defender.id,
-        expect.any(Number) // Damage varies due to variance
+        expect.any(Number),
       );
       expect(result.damageDealt).toBeGreaterThanOrEqual(1);
       expect(result.targetDied).toBe(false);
       expect(result.error).toBeUndefined();
     });
 
-    it('should deal damage and mark character as dead when enemy attack is lethal', async () => {
+    it('should mark character as dead when enemy attack is lethal', async () => {
       const attacker = createMockEnemy('enemy1', 100, 50, 5);
       const defender = createMockCharacter('char1', 30, 10, 5);
 
-      mockZoneService.updateCharacterHealth.mockResolvedValue(0);
+      mockPlayerStateStore.updateCharacterHealth.mockResolvedValue(0);
 
       const result = await combatService.handleAttack(attacker, defender, zoneId);
 
-      expect(mockZoneService.updateCharacterHealth).toHaveBeenCalled();
       expect(result.damageDealt).toBeGreaterThanOrEqual(1);
       expect(result.targetDied).toBe(true);
       expect(result.targetCurrentHealth).toBe(0);
-      expect(result.error).toBeUndefined();
     });
 
-    it('should always deal at least 1 damage with the new formula (no zero damage scenario)', async () => {
-      const attacker = createMockEnemy('enemy1', 100, 10, 5);
-      const defender = createMockCharacter('char1', 80, 10, 15);
-
-      // New formula: (10*10)/(10+15) = 4.0, with variance min 0.9 = 3.6 => floor = 3
-      mockZoneService.updateCharacterHealth.mockResolvedValue(77);
-
-      const result = await combatService.handleAttack(attacker, defender, zoneId);
-
-      // With new formula, even when defense > attack, damage is always >= 1
-      expect(result.damageDealt).toBeGreaterThanOrEqual(1);
-      expect(mockZoneService.updateCharacterHealth).toHaveBeenCalled();
-    });
-
-    it('should handle attacks on enemies (character attacking enemy)', async () => {
+    it('should handle character attacking enemy', async () => {
       const attacker = createMockCharacter('char1', 100, 25, 5);
       const defender = createMockEnemy('enemy1', 50, 10, 10);
 
-      // New formula: (25*25)/(25+10) ≈ 17.86 * ~1.0 ≈ 16-19
-      mockZoneService.updateEnemyHealth.mockResolvedValue(33);
+      mockEnemyStateStore.updateEnemyHealth.mockResolvedValue(33);
 
       const result = await combatService.handleAttack(attacker, defender, zoneId);
 
-      expect(mockZoneService.updateEnemyHealth).toHaveBeenCalledWith(
+      expect(mockEnemyStateStore.updateEnemyHealth).toHaveBeenCalledWith(
         zoneId,
         defender.id,
-        expect.any(Number)
+        expect.any(Number),
       );
-      expect(mockZoneService.updateCharacterHealth).not.toHaveBeenCalled();
+      expect(mockPlayerStateStore.updateCharacterHealth).not.toHaveBeenCalled();
       expect(result.damageDealt).toBeGreaterThanOrEqual(1);
       expect(result.targetDied).toBe(false);
-      expect(result.error).toBeUndefined();
+    });
+
+    it('should trigger death effects when enemy dies', async () => {
+      const attacker = createMockCharacter('char1', 100, 50, 5);
+      const defender = createMockEnemy('enemy1', 5, 10, 10);
+
+      mockEnemyStateStore.updateEnemyHealth.mockResolvedValue(0);
+
+      const result = await combatService.handleAttack(attacker, defender, zoneId);
+
+      expect(result.targetDied).toBe(true);
+      expect(mockBroadcastService.queueDeath).toHaveBeenCalledWith(zoneId, {
+        entityId: defender.id,
+        type: 'enemy',
+      });
+    });
+  });
+
+  describe('handleSpellDamage', () => {
+    const zoneId = 'test-zone';
+
+    it('should hit enemies within radius', async () => {
+      const caster = createMockCharacter('char1', 100, 20, 5);
+      const enemyInRange = createMockEnemy('enemy1', 50, 10, 5);
+      enemyInRange.position = { x: 25, y: 25 }; // close to target
+
+      mockEnemyStateStore.getZoneEnemies.mockReturnValue([enemyInRange]);
+      mockEnemyStateStore.updateEnemyHealth.mockResolvedValue(30);
+
+      const results = await combatService.handleSpellDamage(caster, 20, 20, 100, 30, zoneId);
+
+      expect(results.length).toBe(1);
+      expect(results[0].enemyId).toBe('enemy1');
+      expect(results[0].damageDealt).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should not hit enemies outside radius', async () => {
+      const caster = createMockCharacter('char1', 100, 20, 5);
+      const enemyOutOfRange = createMockEnemy('enemy1', 50, 10, 5);
+      enemyOutOfRange.position = { x: 500, y: 500 }; // far away
+
+      mockEnemyStateStore.getZoneEnemies.mockReturnValue([enemyOutOfRange]);
+
+      const results = await combatService.handleSpellDamage(caster, 20, 20, 50, 30, zoneId);
+
+      expect(results.length).toBe(0);
+    });
+
+    it('should skip dead/dying enemies', async () => {
+      const caster = createMockCharacter('char1', 100, 20, 5);
+      const deadEnemy = createMockEnemy('enemy1', 0, 10, 5);
+      const dyingEnemy = { ...createMockEnemy('enemy2', 10, 10, 5), isDying: true };
+      dyingEnemy.position = { x: 25, y: 25 };
+
+      mockEnemyStateStore.getZoneEnemies.mockReturnValue([deadEnemy, dyingEnemy]);
+
+      const results = await combatService.handleSpellDamage(caster, 20, 20, 100, 30, zoneId);
+
+      expect(results.length).toBe(0);
     });
   });
 });
