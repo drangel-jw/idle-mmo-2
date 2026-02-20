@@ -93,17 +93,7 @@ export class EntityManager {
     createEnemySprite(enemyData: EnemySpawnData): void {
         if (this.enemySprites.has(enemyData.id)) return;
 
-        // TODO: Backend should include a `spriteKey` field on enemy spawn data so the frontend
-        // doesn't need a hardcoded UUID→sprite mapping that breaks across environments.
-        // Tracked: have EnemyTemplate entity expose a spriteKey column and include it in spawn payloads.
-        let spriteKey = enemyData.spriteKey ?? 'goblin';
-        if (!enemyData.spriteKey) {
-            const knownTemplates: { [key: string]: string } = {
-                'b9b83a12-6f9d-4c2e-a8b7-16c26f0f9a8d': 'goblin',
-                '4e94c1a7-7a8a-4f8c-bd4f-933e1d5e2b7f': 'spider',
-            };
-            spriteKey = knownTemplates[enemyData.templateId] ?? 'goblin';
-        }
+        const spriteKey = enemyData.spriteKey ?? 'goblin';
 
         const newEnemy = new EnemySprite(
             this.scene,

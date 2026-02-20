@@ -120,6 +120,11 @@ export const GameConfig = {
   MOVEMENT: {
     CHARACTER_SPEED_PPS: 150,
     FORMATION_OFFSET: 30,
+    COMMAND_RATE_LIMIT_MS: 50,
+  },
+  // === Persistence ===
+  PERSISTENCE: {
+    POSITION_SAVE_INTERVAL_MS: 30000,
   },
 } as const;
 

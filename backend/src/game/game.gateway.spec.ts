@@ -15,6 +15,12 @@ import { Logger } from '@nestjs/common';
 import { Socket } from 'socket.io'; // Import Socket
 import { GameLoopService } from './game-loop.service';
 import { BroadcastService } from './broadcast.service';
+import { PlayerStateStore } from './stores/player-state.store';
+import { EnemyStateStore } from './stores/enemy-state.store';
+import { DroppedItemStore } from './stores/dropped-item.store';
+import { SpellQueueStore } from './stores/spell-queue.store';
+import { InventoryService } from '../inventory/inventory.service';
+import { AbilityService } from '../abilities/ability.service';
 
 // Mocks for services (can be more detailed)
 const mockJwtService = { verifyAsync: jest.fn(), sign: jest.fn() };
@@ -42,8 +48,33 @@ const mockGameLoopService = {
 };
 // Mock for BroadcastService
 const mockBroadcastService = {
-    setServerInstance: jest.fn(), // Mock methods used by gateway
-    // Add queue/flush mocks if gateway ever uses them directly (it shouldn't)
+    setServerInstance: jest.fn(),
+};
+const mockPlayerStateStore = {
+    addPlayerToZone: jest.fn(), removePlayerFromZone: jest.fn(),
+    getPlayersInZone: jest.fn(), setCharacterTargetPosition: jest.fn(),
+    getPlayerCharacters: jest.fn(), getZoneCharacterStates: jest.fn(),
+    setAttackTarget: jest.fn(), setMovementTarget: jest.fn(),
+    setCharacterLootTarget: jest.fn(), setCharacterLootArea: jest.fn(),
+    getPlayerCharactersInZone: jest.fn().mockReturnValue([]),
+    ensureZone: jest.fn(),
+};
+const mockEnemyStateStore = {
+    getEnemyInstanceById: jest.fn(),
+    ensureZone: jest.fn(),
+};
+const mockDroppedItemStore = {
+    ensureZone: jest.fn(),
+};
+const mockSpellQueueStore = {
+    queueSpell: jest.fn(),
+    ensureZone: jest.fn(),
+};
+const mockInventoryService = {
+    addItemToInventory: jest.fn(),
+};
+const mockAbilityService = {
+    handleAbilityUse: jest.fn(),
 };
 
 describe('GameGateway', () => {
@@ -71,6 +102,7 @@ describe('GameGateway', () => {
         attackRange: 50,
         aggroRange: 150,
         leashDistance: 400,
+        class: 'fighter' as any,
     };
     const mockToken = 'valid-token';
 
@@ -116,6 +148,12 @@ describe('GameGateway', () => {
                 { provide: AIService, useValue: mockAIService },
                 { provide: GameLoopService, useValue: mockGameLoopService },
                 { provide: BroadcastService, useValue: mockBroadcastService },
+                { provide: PlayerStateStore, useValue: mockPlayerStateStore },
+                { provide: EnemyStateStore, useValue: mockEnemyStateStore },
+                { provide: DroppedItemStore, useValue: mockDroppedItemStore },
+                { provide: SpellQueueStore, useValue: mockSpellQueueStore },
+                { provide: InventoryService, useValue: mockInventoryService },
+                { provide: AbilityService, useValue: mockAbilityService },
             ],
         }).compile();
 

@@ -9,7 +9,7 @@ import { InventoryService } from '../inventory/inventory.service'; // Import Inv
 import { InventoryItem } from '../inventory/inventory.entity'; // Import InventoryItem
 import { ItemTemplate } from '../item/item.entity'; // Import ItemTemplate
 import { EquipmentSlot, ItemType } from '../item/item.types'; // Import Enums
-import { ZoneService } from '../game/zone.service'; // <-- Import ZoneService
+import { PlayerStateStore } from '../game/stores/player-state.store';
 import { BroadcastService } from '../game/broadcast.service'; // + ADDED
 import { CharacterClassService } from '../character-class/character-class.service'; // +++ IMPORT CLASS SERVICE
 import { CharacterClassTemplate } from '../character-class/character-class-template.entity'; // +++ IMPORT CLASS TEMPLATE
@@ -26,9 +26,8 @@ export class CharacterService {
     // Use forwardRef to handle circular dependency (CharacterService <-> InventoryService)
     @Inject(forwardRef(() => InventoryService))
     private inventoryService: InventoryService,
-    // --- NEW: Inject ZoneService using forwardRef for circular dependency ---
-    @Inject(forwardRef(() => ZoneService))
-    private zoneService: ZoneService,
+    @Inject(forwardRef(() => PlayerStateStore))
+    private playerStateStore: PlayerStateStore,
     // + ADDED BroadcastService injection
     @Inject(forwardRef(() => BroadcastService))
     private broadcastService: BroadcastService,
@@ -209,10 +208,10 @@ export class CharacterService {
     try {
         const newStats = await this.calculateEffectiveStats(characterId);
         this.logger.debug(`[EQUIP] Calculated new stats - Attack: ${newStats.effectiveAttack}, Defense: ${newStats.effectiveDefense}`);
-        await this.zoneService.updateCharacterEffectiveStats(characterId, newStats);
-        this.logger.debug(`[EQUIP] Updated effective stats in ZoneService for character ${characterId} after equip`);
+        await this.playerStateStore.updateCharacterEffectiveStats(characterId, newStats);
+        this.logger.debug(`[EQUIP] Updated effective stats in PlayerStateStore for character ${characterId} after equip`);
     } catch (error) {
-        this.logger.error(`[EQUIP] Failed to update effective stats in ZoneService for ${characterId} after equip: ${error.message}`, error.stack);
+        this.logger.error(`[EQUIP] Failed to update effective stats in PlayerStateStore for ${characterId} after equip: ${error.message}`, error.stack);
         // Decide how critical this is. Should the equip fail? For now, just log.
     }
     // --- End NEW ---
@@ -251,10 +250,10 @@ export class CharacterService {
       // --- NEW: Recalculate stats and update ZoneService ---
       try {
           const newStats = await this.calculateEffectiveStats(characterId); // Use the stored characterId
-          await this.zoneService.updateCharacterEffectiveStats(characterId, newStats);
-          this.logger.log(`Updated effective stats in ZoneService for character ${characterId} after unequip.`);
+          await this.playerStateStore.updateCharacterEffectiveStats(characterId, newStats);
+          this.logger.log(`Updated effective stats in PlayerStateStore for character ${characterId} after unequip.`);
       } catch (error) {
-          this.logger.error(`Failed to update effective stats in ZoneService for ${characterId} after unequip: ${error.message}`, error.stack);
+          this.logger.error(`Failed to update effective stats in PlayerStateStore for ${characterId} after unequip: ${error.message}`, error.stack);
           // Decide how critical this is. For now, just log.
       }
       // --- End NEW ---
@@ -437,11 +436,11 @@ export class CharacterService {
         // Now update the runtime state (stats and health)
         try {
             const newStats = await this.calculateEffectiveStats(characterId);
-            await this.zoneService.updateCharacterEffectiveStats(characterId, newStats);
-            this.zoneService.setCharacterHealth(characterId, savedCharacter.baseHealth); // Full heal on level up
-            this.logger.log(`Updated runtime stats and health for character ${characterId} in ZoneService after level up.`);
+            await this.playerStateStore.updateCharacterEffectiveStats(characterId, newStats);
+            this.playerStateStore.setCharacterHealth(characterId, savedCharacter.baseHealth); // Full heal on level up
+            this.logger.log(`Updated runtime stats and health for character ${characterId} in PlayerStateStore after level up.`);
         } catch (error) {
-            this.logger.error(`Failed to update runtime stats/health in ZoneService for ${characterId} after level up: ${error.message}`, error.stack);
+            this.logger.error(`Failed to update runtime stats/health in PlayerStateStore for ${characterId} after level up: ${error.message}`, error.stack);
         }
 
         // --- Broadcast Level Up Notification --- 
@@ -495,5 +494,28 @@ export class CharacterService {
   }
   // --- End NEW Method ---
 
-  // Add methods for deleting or updating characters later if needed
+  /**
+   * Bulk-saves character positions in a single transaction.
+   * Used by the game loop for periodic position persistence.
+   */
+  async saveCharacterPositions(updates: Array<{ characterId: string; positionX: number; positionY: number; currentZoneId: string }>): Promise<void> {
+    if (updates.length === 0) return;
+
+    try {
+      // Use Promise.all with individual saves for simplicity and safety
+      // TypeORM's save() with an array performs a single transaction internally
+      await Promise.all(
+        updates.map(update =>
+          this.characterRepository.update(update.characterId, {
+            positionX: update.positionX,
+            positionY: update.positionY,
+            currentZoneId: update.currentZoneId,
+          }),
+        ),
+      );
+      this.logger.debug(`Saved positions for ${updates.length} characters`);
+    } catch (error) {
+      this.logger.error(`Failed to save character positions: ${error.message}`, error.stack);
+    }
+  }
 }
