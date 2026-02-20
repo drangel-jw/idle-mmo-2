@@ -51,13 +51,12 @@ export class IdleState implements ICharacterState {
         // --- Action based on aggro/anchor ---
         if (closestEnemy) {
             this.logger.debug(`Character ${character.id} [${character.name}] auto-aggroed enemy ${closestEnemy.id}. Transitioning to attacking.`);
-            const targetEnemy = enemyStateStore.getEnemyInstanceById(zoneId, closestEnemy.id);
             playerStateStore.setAttackTarget(
                 zoneId,
                 character.id,
                 closestEnemy.id,
-                !!targetEnemy,
-                !!targetEnemy?.isDying,
+                true, // closestEnemy was already validated alive from enemiesInZone
+                !!(closestEnemy as any).isDying,
             );
         } else {
             if (character.anchorX !== null && character.anchorY !== null) {
