@@ -10,6 +10,11 @@ export class EnemyStateStore {
     private readonly logger = new Logger(EnemyStateStore.name);
     private enemies: Map<string, Map<string, EnemyInstance>> = new Map();
 
+    // NOTE: forwardRef is used here to resolve circular dependency at runtime.
+    // Dependency direction: EnemyStateStore -> NestStateStore.
+    // NestStateStore must NOT import EnemyStateStore to avoid a full cycle.
+    // TODO: Consider extracting a NestLookupService or passing a lookup function
+    // to decouple these stores if the forwardRef chain grows further.
     constructor(
         private readonly enemyService: EnemyService,
         @Inject(forwardRef(() => NestStateStore))
@@ -125,6 +130,8 @@ export class EnemyStateStore {
             const nest = this.nestStateStore.getNest(zoneId, enemy.nestId);
             if (nest) {
                 nest.currentEnemyIds.delete(id);
+            } else {
+                this.logger.warn(`[removeEnemy] Enemy ${id} has nestId ${enemy.nestId} but nest was not found in zone ${zoneId} — possible stale reference`);
             }
         }
 

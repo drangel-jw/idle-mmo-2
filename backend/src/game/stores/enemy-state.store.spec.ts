@@ -156,6 +156,35 @@ describe('EnemyStateStore', () => {
       const result = store.removeEnemy('zone1', 'nonexistent');
       expect(result).toBe(false);
     });
+
+    it('should handle stale nestId when nest no longer exists', async () => {
+      const mockNest: SpawnNest = {
+        id: 'nest-gone',
+        zoneId: 'zone1',
+        templateId: 'template-1',
+        center: { x: 500, y: 500 },
+        radius: 100,
+        maxCapacity: 5,
+        currentEnemyIds: new Set(),
+        respawnDelayMs: 5000,
+        lastSpawnCheckTime: 0,
+      };
+
+      // getNest returns the nest during addEnemyFromNest so the enemy gets a nestId
+      (mockNestStateStore.getNest as jest.Mock).mockReturnValue(mockNest);
+      const enemy = await store.addEnemyFromNest(mockNest);
+      expect(enemy).toBeDefined();
+      expect(enemy!.nestId).toBe('nest-gone');
+
+      // Simulate nest being removed — getNest now returns undefined
+      (mockNestStateStore.getNest as jest.Mock).mockReturnValue(undefined);
+
+      // removeEnemy should still succeed (not throw) even with a stale nestId
+      const result = store.removeEnemy('zone1', enemy!.id);
+      expect(result).toBe(true);
+      expect(mockNestStateStore.getNest).toHaveBeenCalledWith('zone1', 'nest-gone');
+      expect(store.getEnemy('zone1', enemy!.id)).toBeUndefined();
+    });
   });
 
   describe('updateEnemyPosition', () => {

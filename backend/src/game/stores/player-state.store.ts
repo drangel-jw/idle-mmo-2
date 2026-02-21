@@ -63,6 +63,10 @@ export class PlayerStateStore {
         @Inject(forwardRef(() => CharacterService))
         private readonly characterService: CharacterService,
         private readonly broadcastService: BroadcastService,
+        // NOTE: forwardRef chain: PlayerStateStore -> EnemyStateStore -> NestStateStore.
+        // These stores were previously independent. If this chain grows or a back-edge
+        // is introduced, consider moving cross-store lookups into a thin orchestration
+        // service (e.g., CombatTargetingService) to break the cycle.
         @Inject(forwardRef(() => EnemyStateStore))
         private readonly enemyStateStore: EnemyStateStore,
     ) {}
