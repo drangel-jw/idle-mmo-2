@@ -248,6 +248,39 @@ describe('GameGateway - handleDisconnect position save', () => {
     expect(mockEmit).toHaveBeenCalledWith('playerLeft', { playerId: mockUser.id });
   });
 
+  it('should capture zoneId before removePlayerFromZone is called', () => {
+    // Verify the ordering: positions saved with correct zoneId means it was captured first
+    const socket = createMockSocket({ currentZoneId: 'capturedZone' });
+    const characters = [createMockRuntimeChar({ id: 'char-1', positionX: 100, positionY: 200 })];
+    mockPlayerStateStore.getPlayerCharacters.mockReturnValue(characters);
+    mockPlayerStateStore.removePlayerFromZone.mockImplementation(() => {
+      // After removal, zoneId should already have been captured
+      return { zoneId: 'capturedZone', userId: mockUser.id };
+    });
+
+    gateway.handleDisconnect(socket);
+
+    // The position save should use the captured zoneId, not a stale reference
+    expect(mockCharacterService.saveCharacterPositions).toHaveBeenCalledWith([
+      { characterId: 'char-1', positionX: 100, positionY: 200, currentZoneId: 'capturedZone' },
+    ]);
+    // And removal should still happen
+    expect(mockPlayerStateStore.removePlayerFromZone).toHaveBeenCalled();
+  });
+
+  it('should handle rapid double-disconnect without throwing', () => {
+    const socket = createMockSocket({ currentZoneId: 'zone1' });
+    mockPlayerStateStore.getPlayerCharacters.mockReturnValue([]);
+    mockPlayerStateStore.removePlayerFromZone
+      .mockReturnValueOnce({ zoneId: 'zone1', userId: mockUser.id })
+      .mockReturnValueOnce(null);
+
+    expect(() => {
+      gateway.handleDisconnect(socket);
+      gateway.handleDisconnect(socket);
+    }).not.toThrow();
+  });
+
   it('should handle saveCharacterPositions errors gracefully (fire-and-forget)', () => {
     const socket = createMockSocket({ currentZoneId: 'zone1' });
     const characters = [createMockRuntimeChar({ id: 'char-1', positionX: 100, positionY: 200 })];

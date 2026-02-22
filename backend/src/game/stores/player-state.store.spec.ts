@@ -178,6 +178,24 @@ describe('PlayerStateStore', () => {
       expect(runtimeChar.positionX).toBeLessThan(150);
     });
 
+    it('should restore position (0, 0) correctly without treating it as null', async () => {
+      const socket = createMockSocket();
+      const character = createMockCharacter({
+        currentZoneId: 'zone1',
+        positionX: 0,
+        positionY: 0,
+      });
+
+      await store.addPlayerToZone('zone1', socket, mockUser, [character]);
+
+      const players = store.getPlayersInZone('zone1');
+      const runtimeChar = players[0].characters[0];
+
+      // positionX=0 and positionY=0 are valid coordinates and should be restored
+      expect(runtimeChar.positionX).toBe(0);
+      expect(runtimeChar.positionY).toBe(0);
+    });
+
     it('should always reset health to baseHealth on join, regardless of position restore', async () => {
       const socket = createMockSocket();
       const character = createMockCharacter({
