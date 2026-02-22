@@ -1,11 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { EnemyStateStore } from './enemy-state.store';
+import { NestStateStore } from './nest-state.store';
 import { EnemyService } from '../../enemy/enemy.service';
 import { SpawnNest } from '../interfaces/spawn-nest.interface';
 
 describe('EnemyStateStore', () => {
   let store: EnemyStateStore;
   let mockEnemyService: Partial<EnemyService>;
+  let mockNestStateStore: Partial<NestStateStore>;
 
   const mockTemplate = {
     id: 'template-1',
@@ -29,11 +31,15 @@ describe('EnemyStateStore', () => {
     mockEnemyService = {
       findOne: jest.fn().mockResolvedValue(mockTemplate),
     };
+    mockNestStateStore = {
+      getNest: jest.fn().mockReturnValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         EnemyStateStore,
         { provide: EnemyService, useValue: mockEnemyService },
+        { provide: NestStateStore, useValue: mockNestStateStore },
       ],
     }).compile();
 
@@ -122,7 +128,7 @@ describe('EnemyStateStore', () => {
       expect(store.getEnemy('zone1', enemy!.id)).toBeUndefined();
     });
 
-    it('should clean up nest reference when nests provided', async () => {
+    it('should clean up nest reference via NestStateStore', async () => {
       const nestEnemyIds = new Set<string>();
       const mockNest: SpawnNest = {
         id: 'nest-1',
@@ -135,18 +141,49 @@ describe('EnemyStateStore', () => {
         respawnDelayMs: 5000,
         lastSpawnCheckTime: 0,
       };
+      // Configure the mock to return this nest when looked up
+      (mockNestStateStore.getNest as jest.Mock).mockReturnValue(mockNest);
+
       const enemy = await store.addEnemyFromNest(mockNest);
       expect(nestEnemyIds.has(enemy!.id)).toBe(true);
 
-      const nestsById = new Map();
-      nestsById.set('nest-1', mockNest);
-      store.removeEnemy('zone1', enemy!.id, nestsById);
+      store.removeEnemy('zone1', enemy!.id);
+      expect(mockNestStateStore.getNest).toHaveBeenCalledWith('zone1', 'nest-1');
       expect(nestEnemyIds.has(enemy!.id)).toBe(false);
     });
 
     it('should return false for non-existent enemy', () => {
       const result = store.removeEnemy('zone1', 'nonexistent');
       expect(result).toBe(false);
+    });
+
+    it('should handle stale nestId when nest no longer exists', async () => {
+      const mockNest: SpawnNest = {
+        id: 'nest-gone',
+        zoneId: 'zone1',
+        templateId: 'template-1',
+        center: { x: 500, y: 500 },
+        radius: 100,
+        maxCapacity: 5,
+        currentEnemyIds: new Set(),
+        respawnDelayMs: 5000,
+        lastSpawnCheckTime: 0,
+      };
+
+      // getNest returns the nest during addEnemyFromNest so the enemy gets a nestId
+      (mockNestStateStore.getNest as jest.Mock).mockReturnValue(mockNest);
+      const enemy = await store.addEnemyFromNest(mockNest);
+      expect(enemy).toBeDefined();
+      expect(enemy!.nestId).toBe('nest-gone');
+
+      // Simulate nest being removed — getNest now returns undefined
+      (mockNestStateStore.getNest as jest.Mock).mockReturnValue(undefined);
+
+      // removeEnemy should still succeed (not throw) even with a stale nestId
+      const result = store.removeEnemy('zone1', enemy!.id);
+      expect(result).toBe(true);
+      expect(mockNestStateStore.getNest).toHaveBeenCalledWith('zone1', 'nest-gone');
+      expect(store.getEnemy('zone1', enemy!.id)).toBeUndefined();
     });
   });
 

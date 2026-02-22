@@ -79,8 +79,10 @@ const mockPlayerStateStore = {
     }
     return true;
   }),
-  setAttackTarget: jest.fn().mockImplementation((_zoneId: string, charId: string, targetId: string, enemyExists: boolean, enemyIsDying: boolean) => {
-    if (currentTestCharacter && currentTestCharacter.id === charId && enemyExists && !enemyIsDying) {
+  setAttackTarget: jest.fn().mockImplementation((_zoneId: string, charId: string, targetId: string) => {
+    // Simulates the real store: looks up enemy via enemyStateStore internally
+    const enemy = mockEnemyStateStore.getEnemyInstanceById(_zoneId, targetId);
+    if (currentTestCharacter && currentTestCharacter.id === charId && enemy && !enemy.isDying) {
       currentTestCharacter.attackTargetId = targetId;
       currentTestCharacter.state = 'attacking' as any;
     }

@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { EnemyInstance } from '../interfaces/enemy-instance.interface';
 import { EnemyService } from '../../enemy/enemy.service';
 import { SpawnNest } from '../interfaces/spawn-nest.interface';
+import { NestStateStore } from './nest-state.store';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
@@ -9,7 +10,16 @@ export class EnemyStateStore {
     private readonly logger = new Logger(EnemyStateStore.name);
     private enemies: Map<string, Map<string, EnemyInstance>> = new Map();
 
-    constructor(private readonly enemyService: EnemyService) {}
+    // NOTE: forwardRef is used here to resolve circular dependency at runtime.
+    // Dependency direction: EnemyStateStore -> NestStateStore.
+    // NestStateStore must NOT import EnemyStateStore to avoid a full cycle.
+    // TODO: Consider extracting a NestLookupService or passing a lookup function
+    // to decouple these stores if the forwardRef chain grows further.
+    constructor(
+        private readonly enemyService: EnemyService,
+        @Inject(forwardRef(() => NestStateStore))
+        private readonly nestStateStore: NestStateStore,
+    ) {}
 
     ensureZone(zoneId: string): void {
         if (!this.enemies.has(zoneId)) {
@@ -109,17 +119,19 @@ export class EnemyStateStore {
         return newEnemy;
     }
 
-    removeEnemy(zoneId: string, id: string, nests?: Map<string, SpawnNest>): boolean {
+    removeEnemy(zoneId: string, id: string): boolean {
         const zoneEnemies = this.enemies.get(zoneId);
         if (!zoneEnemies) return false;
         const enemy = zoneEnemies.get(id);
         if (!enemy) return false;
 
-        // Clean up nest reference if provided
-        if (enemy.nestId && nests) {
-            const nest = nests.get(enemy.nestId);
+        // Clean up nest reference internally via NestStateStore
+        if (enemy.nestId) {
+            const nest = this.nestStateStore.getNest(zoneId, enemy.nestId);
             if (nest) {
                 nest.currentEnemyIds.delete(id);
+            } else {
+                this.logger.warn(`[removeEnemy] Enemy ${id} has nestId ${enemy.nestId} but nest was not found in zone ${zoneId} — possible stale reference`);
             }
         }
 
