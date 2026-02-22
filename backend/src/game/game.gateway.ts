@@ -644,7 +644,10 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
               target.targetX,
               target.targetY
           );
-          if (!success) {
+          if (success) {
+              // Player-initiated move: update anchor to new station position
+              this.playerStateStore.setCharacterAnchor(zoneId, target.charId, target.targetX, target.targetY);
+          } else {
               this.logger.warn(`[MoveCmd] Failed to set movement target for char ${target.charId} via ZoneService.`);
           }
       }

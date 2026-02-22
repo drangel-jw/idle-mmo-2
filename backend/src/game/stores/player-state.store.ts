@@ -376,8 +376,6 @@ export class PlayerStateStore {
 
         character.targetX = targetX;
         character.targetY = targetY;
-        character.anchorX = targetX;
-        character.anchorY = targetY;
         character.attackTargetId = null;
         character.targetItemId = null;
         character.commandState = null;
@@ -453,6 +451,14 @@ export class PlayerStateStore {
         }
         this.logger.warn(`[PlayerStateStore] Failed to set loot area state for character ${characterId} (User: ${userId}). Not found or dead.`);
         return false;
+    }
+
+    setCharacterAnchor(zoneId: string, characterId: string, anchorX: number, anchorY: number): boolean {
+        const character = this.findCharacterInZone(zoneId, characterId);
+        if (!character) return false;
+        character.anchorX = anchorX;
+        character.anchorY = anchorY;
+        return true;
     }
 
     // Alias used by attacking.state.ts
