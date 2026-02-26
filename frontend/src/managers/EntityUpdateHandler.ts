@@ -6,6 +6,7 @@ import { CombatVisualManager } from './CombatVisualManager';
 import { EventBus } from '../EventBus';
 import { ClientConfig } from '../config/game.config';
 import { NetworkManager } from '../network/NetworkManager';
+import { SelectionManager } from './SelectionManager';
 import { ZoneCharacterState } from '../types/zone.types';
 
 interface EntityUpdateData {
@@ -68,19 +69,22 @@ export class EntityUpdateHandler {
     private combatVisualManager: CombatVisualManager;
     private networkManager: NetworkManager;
     private uiSceneRef: any;
+    private selectionManager: SelectionManager;
 
     constructor(
         scene: Phaser.Scene,
         entityManager: EntityManager,
         combatVisualManager: CombatVisualManager,
         networkManager: NetworkManager,
-        uiSceneRef: any
+        uiSceneRef: any,
+        selectionManager: SelectionManager
     ) {
         this.scene = scene;
         this.entityManager = entityManager;
         this.combatVisualManager = combatVisualManager;
         this.networkManager = networkManager;
         this.uiSceneRef = uiSceneRef;
+        this.selectionManager = selectionManager;
     }
 
     setUiSceneRef(ref: any): void {
@@ -184,6 +188,9 @@ export class EntityUpdateHandler {
 
     private handleEntityDied(data: EntityDeathData): void {
         this.combatVisualManager.handleEntityDied(data.entityId, data.type);
+        if (data.type === 'character') {
+            this.selectionManager.handleCharacterDied(data.entityId);
+        }
     }
 
     private handleEnemySpawned(enemyData: EnemySpawnData): void {

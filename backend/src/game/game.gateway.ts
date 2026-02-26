@@ -590,11 +590,11 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
   @SubscribeMessage('moveCommand')
   async handleMoveCommand(
-    @MessageBody() data: { target: { x: number; y: number } },
+    @MessageBody() data: { target: { x: number; y: number }; characterIds?: string[] },
     @ConnectedSocket() client: Socket,
   ) {
       const user = client.data.user as User;
-      const partyCharactersData = client.data.selectedCharacters as Character[]; // Get the base Character data
+      const partyCharactersData = client.data.selectedCharacters as Character[];
       const zoneId = client.data.currentZoneId as string;
 
       if (!user || !partyCharactersData || partyCharactersData.length === 0 || !zoneId) {
@@ -616,6 +616,19 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       }
       this.moveCommandTimestamps.set(user.id, now);
 
+      // Filter characters by characterIds if provided, otherwise move all
+      const partyIdSet = new Set(partyCharactersData.map(c => c.id));
+      let charactersToMove: Character[];
+      if (data.characterIds && data.characterIds.length > 0) {
+          charactersToMove = partyCharactersData.filter(c => data.characterIds!.includes(c.id));
+          if (charactersToMove.length === 0) {
+              this.logger.warn(`Move command ignored: none of the provided characterIds belong to the player's party.`);
+              return;
+          }
+      } else {
+          charactersToMove = partyCharactersData;
+      }
+
       // Clamp target to zone bounds
       const formationCenter = {
           x: Math.max(0, Math.min(GameConfig.ZONE.WIDTH, data.target.x)),
@@ -623,20 +636,28 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       };
       const formationOffset = GameConfig.MOVEMENT.FORMATION_OFFSET;
 
-      // --- Calculate target positions --- 
+      // Adaptive formation based on number of characters moving
       const targets: { charId: string, targetX: number, targetY: number }[] = [];
-      if (partyCharactersData.length > 0) {
-          targets.push({ charId: partyCharactersData[0].id, targetX: formationCenter.x, targetY: formationCenter.y - formationOffset * 0.5 });
+      if (charactersToMove.length === 1) {
+          // Single character: exact click point
+          targets.push({ charId: charactersToMove[0].id, targetX: formationCenter.x, targetY: formationCenter.y });
+      } else if (charactersToMove.length === 2) {
+          // Two characters: side by side
+          targets.push({ charId: charactersToMove[0].id, targetX: formationCenter.x - formationOffset * 0.5, targetY: formationCenter.y });
+          targets.push({ charId: charactersToMove[1].id, targetX: formationCenter.x + formationOffset * 0.5, targetY: formationCenter.y });
+      } else {
+          // Three characters: triangle formation
+          if (charactersToMove.length > 0) {
+              targets.push({ charId: charactersToMove[0].id, targetX: formationCenter.x, targetY: formationCenter.y - formationOffset * 0.5 });
+          }
+          if (charactersToMove.length > 1) {
+              targets.push({ charId: charactersToMove[1].id, targetX: formationCenter.x - formationOffset, targetY: formationCenter.y + formationOffset * 0.5 });
+          }
+          if (charactersToMove.length > 2) {
+              targets.push({ charId: charactersToMove[2].id, targetX: formationCenter.x + formationOffset, targetY: formationCenter.y + formationOffset * 0.5 });
+          }
       }
-      if (partyCharactersData.length > 1) {
-          targets.push({ charId: partyCharactersData[1].id, targetX: formationCenter.x - formationOffset, targetY: formationCenter.y + formationOffset * 0.5 });
-      }
-      if (partyCharactersData.length > 2) {
-          targets.push({ charId: partyCharactersData[2].id, targetX: formationCenter.x + formationOffset, targetY: formationCenter.y + formationOffset * 0.5 });
-      }
-      // --------------------------------
 
-      // --- Use ZoneService to set targets and state --- 
       for (const target of targets) {
           const success = this.playerStateStore.setMovementTarget(
               zoneId,
@@ -651,16 +672,15 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
               this.logger.warn(`[MoveCmd] Failed to set movement target for char ${target.charId} via ZoneService.`);
           }
       }
-      // No need to directly manipulate character state here anymore
   }
 
   @SubscribeMessage('attackCommand')
   handleAttackCommand(
-      @MessageBody() data: { targetId: string },
+      @MessageBody() data: { targetId: string; characterIds?: string[] },
       @ConnectedSocket() client: Socket,
   ): void {
       const user = client.data.user as User;
-      const partyCharactersData = client.data.selectedCharacters as Character[]; // Get base Character data
+      const partyCharactersData = client.data.selectedCharacters as Character[];
       const zoneId = client.data.currentZoneId as string;
 
       if (!user || !partyCharactersData || partyCharactersData.length === 0 || !zoneId) {
@@ -677,8 +697,19 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
           return;
       }
 
-      // Set the target and state for ALL characters in the party
-      for (const character of partyCharactersData) {
+      // Filter characters by characterIds if provided, otherwise attack with all
+      let charactersToAttack: Character[];
+      if (data.characterIds && data.characterIds.length > 0) {
+          charactersToAttack = partyCharactersData.filter(c => data.characterIds!.includes(c.id));
+          if (charactersToAttack.length === 0) {
+              this.logger.warn(`Attack command ignored: none of the provided characterIds belong to the player's party.`);
+              return;
+          }
+      } else {
+          charactersToAttack = partyCharactersData;
+      }
+
+      for (const character of charactersToAttack) {
            const success = this.playerStateStore.setAttackTarget(
               zoneId,
               character.id,
@@ -688,7 +719,6 @@ export class GameGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
                this.logger.warn(`[AttackCmd] Failed to set attack target for char ${character.id} (target: ${targetEnemyId}).`);
           }
       }
-      // No need to directly manipulate character state here anymore
   }
 
   // --- Handler to request equipment state --- 

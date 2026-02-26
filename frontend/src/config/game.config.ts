@@ -30,6 +30,16 @@ export const ClientConfig = {
     wizard:   { impactFrame: 2, frameRate: null },
     priest:   { impactFrame: 3, frameRate: null },
   } as Record<string, { impactFrame: number; frameRate: number | null }>,
+  SELECTION: {
+    BOX_COLOR: 0x00ff00,
+    BOX_ALPHA: 0.15,
+    BOX_STROKE_ALPHA: 0.6,
+    MIN_DRAG_PX: 5,
+    INDICATOR_COLOR: 0x00ff00,
+    INDICATOR_ALPHA: 0.3,
+    INDICATOR_RADIUS: 20,
+    DESELECTED_ALPHA: 0.5,
+  },
   ENEMY: {
     DEATH_FADE_MS: 500,
     DEATH_DESTROY_DELAY_MS: 10000,

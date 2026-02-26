@@ -560,6 +560,7 @@ export default class UIScene extends Phaser.Scene {
         // --- Ability / Cooldown Event Listeners ---
         EventBus.on('abilities-loaded', this.handleAbilitiesLoaded, this);
         EventBus.on('spell-cast', this.handleSpellCastCooldown, this);
+        EventBus.on('selection-changed', this.handleSelectionChanged, this);
 
         this.hideItemTooltip();
     }
@@ -699,6 +700,24 @@ export default class UIScene extends Phaser.Scene {
         }
     }
 
+    // --- Selection Changed Handler ---
+    private handleSelectionChanged(data: { selectedIds: string[] }): void {
+        const selected = new Set(data.selectedIds);
+        this.partyMemberPanels.forEach((_refs, charId) => {
+            const panel = this.partyUiGameObject?.getChildByID(`party-panel-${charId}`) as HTMLElement;
+            if (!panel) return;
+            if (selected.has(charId)) {
+                panel.style.borderColor = '#00ff00';
+                panel.style.borderWidth = '2px';
+                panel.style.opacity = '1';
+            } else {
+                panel.style.borderColor = '#555';
+                panel.style.borderWidth = '1px';
+                panel.style.opacity = '0.6';
+            }
+        });
+    }
+
     // --- Cooldown Timer ---
     private startAbilityCooldown(characterId: string, slotIndex: number, cooldownMs: number): void {
         const panelRefs = this.partyMemberPanels.get(characterId);
@@ -739,6 +758,7 @@ export default class UIScene extends Phaser.Scene {
         EventBus.off('party-member-level-up', this.handlePartyMemberLevelUp, this);
         EventBus.off('abilities-loaded', this.handleAbilitiesLoaded, this);
         EventBus.off('spell-cast', this.handleSpellCastCooldown, this);
+        EventBus.off('selection-changed', this.handleSelectionChanged, this);
         // DOM elements added via this.add.dom are usually cleaned up automatically by Phaser
 
         // --- Clean up global listener ---

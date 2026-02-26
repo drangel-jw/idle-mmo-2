@@ -11,6 +11,7 @@ import { EntityUpdateHandler } from '../managers/EntityUpdateHandler';
 import { CombatVisualManager } from '../managers/CombatVisualManager';
 import { ClickMarkerManager } from '../managers/ClickMarkerManager';
 import { InputManager } from '../managers/InputManager';
+import { SelectionManager } from '../managers/SelectionManager';
 
 interface EnemySpawnData {
     id: string;
@@ -36,6 +37,7 @@ export default class GameScene extends Phaser.Scene {
     private combatVisualManager!: CombatVisualManager;
     private clickMarkerManager!: ClickMarkerManager;
     private inputManager!: InputManager;
+    private selectionManager!: SelectionManager;
 
     constructor() {
         super('GameScene');
@@ -115,6 +117,7 @@ export default class GameScene extends Phaser.Scene {
 
         this.combatVisualManager = new CombatVisualManager(this, this.entityManager);
         this.clickMarkerManager = new ClickMarkerManager(this);
+        this.selectionManager = new SelectionManager(this, this.entityManager);
 
         // Launch UI Scene
         this.scene.launch('UIScene', { selectedParty: this.selectedPartyData });
@@ -122,12 +125,12 @@ export default class GameScene extends Phaser.Scene {
 
         this.entityUpdateHandler = new EntityUpdateHandler(
             this, this.entityManager, this.combatVisualManager,
-            this.networkManager, this.uiSceneRef
+            this.networkManager, this.uiSceneRef, this.selectionManager
         );
 
         this.inputManager = new InputManager(
             this, this.entityManager, this.clickMarkerManager,
-            this.networkManager, this.uiSceneRef
+            this.networkManager, this.uiSceneRef, this.selectionManager
         );
 
         // Register event listeners
@@ -162,11 +165,8 @@ export default class GameScene extends Phaser.Scene {
                 this.entityManager.createEnemySprite(enemyData);
             });
 
-            const firstPlayerChar = Array.from(this.entityManager.playerCharacters.values())[0];
-            if (firstPlayerChar) {
-                this.cameras.main.startFollow(firstPlayerChar, true, ClientConfig.CAMERA.FOLLOW_LERP, ClientConfig.CAMERA.FOLLOW_LERP);
-                this.cameras.main.setZoom(ClientConfig.CAMERA.ZOOM);
-            }
+            this.selectionManager.selectAll();
+            this.cameras.main.setZoom(ClientConfig.CAMERA.ZOOM);
 
             this.networkManager.sendMessage('requestInventory');
         };
@@ -187,6 +187,7 @@ export default class GameScene extends Phaser.Scene {
 
     update(time: number, delta: number) {
         this.entityManager.update(time, delta);
+        this.selectionManager?.update();
 
         if (this.backgroundManager && this.backgroundManager.isReady()) {
             const camera = this.cameras.main;
@@ -200,8 +201,23 @@ export default class GameScene extends Phaser.Scene {
         this.combatVisualManager.cleanupOldAttacks();
 
         if (this.clickMarkerManager.hasActiveMarker && this.entityManager.playerCharacters.size > 0) {
-            const avg = this.entityManager.getPlayerPositionAverage();
-            this.clickMarkerManager.checkArrival(avg.x, avg.y);
+            // Use selected characters' average position for click marker arrival
+            const selectedIds = this.selectionManager?.getSelectedIds() ?? [];
+            let sumX = 0, sumY = 0, count = 0;
+            for (const id of selectedIds) {
+                const sprite = this.entityManager.playerCharacters.get(id);
+                if (sprite) {
+                    sumX += sprite.x;
+                    sumY += sprite.y;
+                    count++;
+                }
+            }
+            if (count > 0) {
+                this.clickMarkerManager.checkArrival(sumX / count, sumY / count);
+            } else {
+                const avg = this.entityManager.getPlayerPositionAverage();
+                this.clickMarkerManager.checkArrival(avg.x, avg.y);
+            }
         }
     }
 
@@ -218,6 +234,7 @@ export default class GameScene extends Phaser.Scene {
         EventBus.off('network-disconnect', this.handleDisconnectError, this);
         this.entityUpdateHandler?.removeEventListeners();
         this.inputManager?.destroy();
+        this.selectionManager?.destroy();
         this.entityManager?.destroy();
         this.combatVisualManager?.destroy();
         this.clickMarkerManager?.destroy();
