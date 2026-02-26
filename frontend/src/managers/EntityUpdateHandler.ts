@@ -52,6 +52,7 @@ interface EnemySpawnData {
     currentHealth: number;
     baseHealth?: number;
     position: { x: number; y: number };
+    spriteKey?: string;
 }
 
 interface ChatMessageData {
@@ -170,12 +171,12 @@ export class EntityUpdateHandler {
                 case 'moving':
                 case 'moving_to_loot': animState = 'walk'; break;
                 case 'attacking':
-                case 'looting_area': animState = 'attack'; break;
+                case 'looting_area': animState = 'idle'; break;
                 case 'dead': break;
                 default: animState = 'idle';
             }
             if (data.state !== 'dead') {
-                const forceRestart = (animState === 'attack');
+                const forceRestart = false;
                 sprite.setAnimation(animState, forceRestart);
             }
         }

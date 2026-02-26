@@ -20,6 +20,7 @@ interface EnemySpawnData {
     currentHealth: number;
     baseHealth?: number;
     position: { x: number; y: number };
+    spriteKey?: string;
 }
 
 export default class GameScene extends Phaser.Scene {
@@ -55,6 +56,24 @@ export default class GameScene extends Phaser.Scene {
         this.load.image('clickMarker', 'assets/ui/click_marker.png');
         this.load.image('goblin', 'assets/sprites/goblin.png');
         this.load.image('spider', 'assets/sprites/spider.png');
+
+        // Enemy sprites
+        this.load.image('orc_warrior', 'assets/sprites/orc_warrior.png');
+        this.load.image('skeleton', 'assets/sprites/skeleton.png');
+        this.load.image('fire_elemental', 'assets/sprites/fire_elemental.png');
+
+        // Item sprites
+        const itemSprites = [
+            'ruby_gem', 'emerald_gem', 'sapphire_gem',
+            'bronze_sword', 'iron_blade', 'steel_longsword', 'wooden_staff', 'crystal_wand',
+            'leather_vest', 'chain_mail', 'plate_armor',
+            'leather_cap', 'iron_helmet',
+            'bronze_ring', 'silver_ring', 'gold_necklace',
+        ];
+        itemSprites.forEach(key => this.load.image(key, `assets/sprites/items/${key}.png`));
+
+        // Ability sprites
+        this.load.image('rain_of_arrows', 'assets/sprites/abilities/rain_of_arrows.png');
 
         const classesToLoad = ['fighter', 'wizard', 'archer', 'priest'];
         const frameConfig = { frameWidth: 100, frameHeight: 100 };

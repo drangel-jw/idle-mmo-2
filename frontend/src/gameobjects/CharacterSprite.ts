@@ -4,6 +4,7 @@ import { HealthBar } from './HealthBar'; // Import HealthBar
 import { PhaserSpriteAnimator, StateTextureKeys } from '../graphics/PhaserSpriteAnimator'; // <<< Import Phaser Animator
 import { ZoneCharacterState } from '../types/zone.types';
 import FloatingCombatText from './FloatingCombatText';
+import { ClientConfig } from '../config/game.config';
 
 export class CharacterSprite extends Phaser.GameObjects.Sprite {
     characterId: string;
@@ -262,8 +263,12 @@ export class CharacterSprite extends Phaser.GameObjects.Sprite {
     // <<<--- NEW METHOD TO CONTROL ANIMATION ---
     setAnimation(state: 'idle' | 'walk' | 'attack', forceRestart: boolean = false): void {
         if (!this.animator) {
-            // console.warn(`[CharacterSprite ${this.characterId}] Animator not available, cannot set animation state: ${state}`);
             return; // Animator not initialized
+        }
+
+        // Don't interrupt a one-shot attack animation with idle/walk
+        if (this.isPlayingAttack && state !== 'attack') {
+            return;
         }
 
         // Determine if the animation should ignore if already playing (default: true)
@@ -272,13 +277,6 @@ export class CharacterSprite extends Phaser.GameObjects.Sprite {
             forceRestart = true;
             ignoreIfPlaying = false;
         }
-
-        // Handle movement interruption/state change logic if needed
-        // Example: Stop interpolation when attacking
-        // if (state === 'attack') {
-        //    this.targetX = this.x;
-        //    this.targetY = this.y;
-        // }
 
         try {
              this.animator.playAnimation(state, forceRestart, ignoreIfPlaying);
@@ -358,39 +356,78 @@ export class CharacterSprite extends Phaser.GameObjects.Sprite {
         }
     }
 
-    // --- NEW METHOD TO PLAY ATTACK ANIMATION ONCE --- 
-    public playAttackAnimationOnce(): void {
-        // <<<--- DEBUG LOG ENTRY ---
-        // -------------------------
-
+    // --- PLAY ATTACK ANIMATION ONCE ---
+    // onImpact fires when the animation reaches the configured impact frame
+    public playAttackAnimationOnce(onImpact?: () => void): void {
         if (this.isDead || !this.scene || !this.active || !this.animator) {
-            return; // Cannot play if dead or destroyed
+            onImpact?.(); // Fire immediately so damage text still shows
+            return;
         }
 
         const attackStateKey = 'attack';
         const fullAnimKey = `${this.className}_${attackStateKey}`;
 
-        // Check if the animation exists
         if (!this.scene.anims.exists(fullAnimKey)) {
+             onImpact?.();
              return;
         }
-        
-        this.isPlayingAttack = true; 
 
-        this.animator.playAnimation(attackStateKey, true, false, undefined);
+        this.isPlayingAttack = true;
 
-        // --- Listen for completion --- 
-        // Use the sprite's event emitter
+        // Look up per-class attack config
+        const attackConfig = ClientConfig.ATTACK_ANIMS[this.className];
+        const impactFrame = attackConfig?.impactFrame ?? 0;
+        const frameRateOverride = attackConfig?.frameRate ?? undefined;
+
+        this.animator.playAnimation(attackStateKey, true, false, frameRateOverride);
+
+        // --- Fire onImpact at the right frame ---
+        let impactFired = false;
+        if (onImpact) {
+            if (impactFrame <= 0) {
+                // Frame 0 = immediate
+                onImpact();
+                impactFired = true;
+            } else {
+                const frameHandler = (
+                    _anim: Phaser.Animations.Animation,
+                    frame: Phaser.Animations.AnimationFrame
+                ) => {
+                    if (!impactFired && frame.index >= impactFrame) {
+                        impactFired = true;
+                        onImpact();
+                        this.off(Phaser.Animations.Events.ANIMATION_UPDATE, frameHandler);
+                    }
+                };
+                this.on(Phaser.Animations.Events.ANIMATION_UPDATE, frameHandler);
+
+                // Clean up frame listener on animation complete
+                this.once(Phaser.Animations.Events.ANIMATION_COMPLETE_KEY + fullAnimKey, () => {
+                    this.off(Phaser.Animations.Events.ANIMATION_UPDATE, frameHandler);
+                });
+            }
+        }
+
+        // --- Listen for completion ---
         this.once(Phaser.Animations.Events.ANIMATION_COMPLETE_KEY + fullAnimKey, () => {
-             this.isPlayingAttack = false; 
-             this.updateAnimation(); 
+             // If impact never fired (animation shorter than expected), fire now
+             if (onImpact && !impactFired) {
+                 impactFired = true;
+                 onImpact();
+             }
+             this.isPlayingAttack = false;
+             this.updateAnimation();
         });
 
-         // Safety timeout 
-         this.scene.time.delayedCall(this.attackSpeedMs * 1.5, () => { // Now uses declared property
+         // Safety timeout
+         this.scene.time.delayedCall(this.attackSpeedMs * 1.5, () => {
              if (this.isPlayingAttack) {
+                 if (onImpact && !impactFired) {
+                     impactFired = true;
+                     onImpact();
+                 }
                  this.isPlayingAttack = false;
-                 if (this.active) { // Check if sprite still active
+                 if (this.active) {
                     this.updateAnimation();
                  }
              }

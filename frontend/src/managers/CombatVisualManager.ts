@@ -33,12 +33,17 @@ export class CombatVisualManager {
             this.recentPlayerAttacks.set(data.targetId, Date.now());
         }
 
-        if (attackerSprite instanceof CharacterSprite) {
-            attackerSprite.playAttackAnimationOnce();
-        }
+        const showDamage = () => {
+            if (data.damage && data.targetId) {
+                this.showDamageOnEntity(data.targetId, data.damage, '#ff0000');
+            }
+        };
 
-        if (data.damage && data.targetId) {
-            this.showDamageOnEntity(data.targetId, data.damage, '#ff0000');
+        if (attackerSprite instanceof CharacterSprite) {
+            attackerSprite.playAttackAnimationOnce(showDamage);
+        } else {
+            // Non-character attacker (or sprite not found) — show damage immediately
+            showDamage();
         }
     }
 

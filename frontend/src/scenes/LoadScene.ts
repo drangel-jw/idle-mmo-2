@@ -13,6 +13,7 @@ interface EnemySpawnData {
     currentHealth: number;
     baseHealth?: number;
     position: { x: number; y: number };
+    spriteKey?: string;
 }
 
 export default class LoadScene extends Phaser.Scene {

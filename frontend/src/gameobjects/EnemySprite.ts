@@ -9,7 +9,8 @@ export class EnemySprite extends Phaser.GameObjects.Sprite {
     private healthBar: HealthBar; // Add health bar property
     private isDying: boolean = false; // Track death animation state
     constructor(scene: Phaser.Scene, x: number, y: number, spriteKey:string, name: string, enemyData?:any) {
-        super(scene, x, y, spriteKey); // Ensure spriteKey is passed correctly
+        const resolvedKey = scene.textures.exists(spriteKey) ? spriteKey : 'goblin';
+        super(scene, x, y, resolvedKey); // Ensure spriteKey is passed correctly
         this.spriteKey = spriteKey
         this.scene.add.existing(this);
         scene.physics.add.existing(this);

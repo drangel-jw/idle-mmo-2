@@ -38,6 +38,7 @@ interface EnemySpawnData {
     wanderRadius?: number; // Optional
     // Add baseHealth if backend sends it, otherwise client might need to infer max HP
     baseHealth?: number; // Added baseHealth if available
+    spriteKey?: string; // Sprite texture key for rendering
 }
 
 // +++ ADD: CombatActionData interface (if not imported/shared) +++

@@ -21,6 +21,15 @@ export const ClientConfig = {
     RECENT_ATTACK_THRESHOLD_MS: 2000,
     FLOATING_TEXT_RISE: 30,
   },
+  // Per-class attack animation tuning
+  // impactFrame: the 0-indexed frame where the hit lands (damage text appears)
+  // frameRate: override for attack animation speed (null = use default animIntervalMs)
+  ATTACK_ANIMS: {
+    fighter:  { impactFrame: 1, frameRate: null },
+    archer:   { impactFrame: 7, frameRate: 18 },  // 9 frames @ 18fps = 500ms total
+    wizard:   { impactFrame: 2, frameRate: null },
+    priest:   { impactFrame: 3, frameRate: null },
+  } as Record<string, { impactFrame: number; frameRate: number | null }>,
   ENEMY: {
     DEATH_FADE_MS: 500,
     DEATH_DESTROY_DELAY_MS: 10000,

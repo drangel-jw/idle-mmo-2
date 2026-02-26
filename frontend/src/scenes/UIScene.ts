@@ -102,11 +102,15 @@ export default class UIScene extends Phaser.Scene {
         xpFillElement: HTMLElement | null, // Reference to XP bar fill
         hpTextElement: HTMLElement | null, // Reference to text overlay for HP
         xpTextElement: HTMLElement | null, // Reference to text overlay for XP
+        abilityBarElement: HTMLElement | null, // Reference to ability bar container
+        partyIndex: number,
         currentHp: number,
         maxHp: number,
         currentXp: number, // Store current XP (relative to level start)
         xpToNextLevel: number // Store XP needed for next level (relative to level start)
     }> = new Map();
+    // Ability data stored per character: characterId -> slot abilities
+    private characterAbilities: Map<string, { slotIndex: number, abilityId: string, cooldown: number }[]> = new Map();
     // ---------------
 
     constructor() {
@@ -508,19 +512,19 @@ export default class UIScene extends Phaser.Scene {
             // Set Origin to Top-Left of the DOM element wrapper
             .setOrigin(0, 0) // <-- CHANGED
             // Position the Top-Left corner relative to the canvas size
-            .setPosition(470, this.scale.height - 60); // <-- CHANGED Y position (Estimate panel height)
+            .setPosition(470, this.scale.height - 82); // <-- CHANGED Y position (Estimate panel height)
 
         const partyUiContainer = this.partyUiGameObject.getChildByID('party-ui') as HTMLElement;
         if (!partyUiContainer) {
             console.error("Failed to create Party UI container!");
         } else {
             // --- Populate Initial Party Panels ---
-            this.receivedPartyData.forEach(charData => {
+            this.receivedPartyData.forEach((charData, index) => {
                 if (!charData || !charData.id) {
                     console.warn("Skipping party panel creation for invalid charData:", charData);
                     return;
                 }
-                const panelHtml = this._createPartyMemberPanelHTML(charData);
+                const panelHtml = this._createPartyMemberPanelHTML(charData, index);
                 partyUiContainer.insertAdjacentHTML('beforeend', panelHtml);
 
                 // Store references to the dynamic elements and initial max HP
@@ -539,6 +543,8 @@ export default class UIScene extends Phaser.Scene {
                         xpFillElement: panelElement.querySelector('.xp-bar-fill') as HTMLElement | null,
                         hpTextElement: panelElement.querySelector('.hp-bar-text') as HTMLElement | null,
                         xpTextElement: panelElement.querySelector('.xp-bar-text') as HTMLElement | null,
+                        abilityBarElement: panelElement.querySelector('.ability-bar') as HTMLElement | null,
+                        partyIndex: index,
                         currentHp: initialHp,
                         maxHp: initialMaxHp,
                         currentXp: xpInCurrentLevel,
@@ -550,6 +556,10 @@ export default class UIScene extends Phaser.Scene {
             });
         }
         // -----------------------------------------
+
+        // --- Ability / Cooldown Event Listeners ---
+        EventBus.on('abilities-loaded', this.handleAbilitiesLoaded, this);
+        EventBus.on('spell-cast', this.handleSpellCastCooldown, this);
 
         this.hideItemTooltip();
     }
@@ -604,6 +614,119 @@ export default class UIScene extends Phaser.Scene {
         this.chatLogElement.scrollTop = this.chatLogElement.scrollHeight;
     }
 
+    // --- Ability Bar API ---
+    public setAbilitySlot(characterId: string, slotIndex: number, abilityData: { name: string; iconUrl?: string; iconColor?: string; tooltip?: string; abilityId?: string; cooldown?: number } | null): void {
+        const panelRefs = this.partyMemberPanels.get(characterId);
+        if (!panelRefs?.abilityBarElement) return;
+
+        const slots = panelRefs.abilityBarElement.querySelectorAll('.ability-slot');
+        const slot = slots[slotIndex] as HTMLElement | undefined;
+        if (!slot) return;
+
+        if (abilityData) {
+            // Render icon if provided
+            if (abilityData.iconUrl) {
+                // Keep the hotkey label and cooldown overlay, replace other content
+                const hotkeyLabel = slot.querySelector('.hotkey-label');
+                const cooldownOverlay = slot.querySelector('.cooldown-overlay');
+                slot.innerHTML = '';
+                const img = document.createElement('img');
+                img.src = abilityData.iconUrl;
+                img.style.cssText = 'width: 14px; height: 14px; object-fit: contain; image-rendering: pixelated;';
+                slot.appendChild(img);
+                if (hotkeyLabel) slot.appendChild(hotkeyLabel);
+                if (cooldownOverlay) slot.appendChild(cooldownOverlay);
+            }
+
+            slot.style.borderColor = abilityData.iconColor ?? '#558899';
+            slot.style.backgroundColor = abilityData.iconColor
+                ? `${abilityData.iconColor}33`
+                : 'rgba(0,30,50,0.4)';
+            slot.title = abilityData.tooltip ?? abilityData.name;
+
+            // Store ability data on the element
+            if (abilityData.abilityId) {
+                slot.dataset.abilityId = abilityData.abilityId;
+            }
+            if (abilityData.cooldown) {
+                slot.dataset.cooldown = String(abilityData.cooldown);
+            }
+
+            // Store in characterAbilities map
+            if (abilityData.abilityId) {
+                let abilities = this.characterAbilities.get(characterId) || [];
+                abilities = abilities.filter(a => a.slotIndex !== slotIndex);
+                abilities.push({ slotIndex, abilityId: abilityData.abilityId, cooldown: abilityData.cooldown || 0 });
+                this.characterAbilities.set(characterId, abilities);
+            }
+        } else {
+            // Clear slot
+            slot.style.borderColor = '#334455';
+            slot.style.backgroundColor = 'rgba(0,30,50,0.4)';
+            slot.title = '';
+            delete slot.dataset.abilityId;
+            delete slot.dataset.cooldown;
+        }
+    }
+
+    // --- Ability Loaded Handler ---
+    private handleAbilitiesLoaded(data: { abilities: any[] }): void {
+        const rainOfArrows = data.abilities.find((a: any) => a.name === 'Rain of Arrows');
+        if (!rainOfArrows) return;
+        const firstCharId = this.receivedPartyData[0]?.id;
+        if (!firstCharId) return;
+        this.setAbilitySlot(firstCharId, 0, {
+            name: rainOfArrows.name,
+            iconUrl: 'assets/sprites/abilities/rain_of_arrows.png',
+            tooltip: `${rainOfArrows.name} (${rainOfArrows.cooldown / 1000}s CD)`,
+            abilityId: rainOfArrows.id,
+            cooldown: rainOfArrows.cooldown,
+        });
+    }
+
+    // --- Cooldown on Spell Cast ---
+    private handleSpellCastCooldown(data: { abilityId: string }): void {
+        for (const [charId, panelRefs] of this.partyMemberPanels) {
+            const slots = panelRefs.abilityBarElement?.querySelectorAll('.ability-slot');
+            if (!slots) continue;
+            slots.forEach((slot, index) => {
+                const el = slot as HTMLElement;
+                if (el.dataset.abilityId === data.abilityId) {
+                    const cd = parseInt(el.dataset.cooldown || '0', 10);
+                    if (cd > 0) this.startAbilityCooldown(charId, index, cd);
+                }
+            });
+        }
+    }
+
+    // --- Cooldown Timer ---
+    private startAbilityCooldown(characterId: string, slotIndex: number, cooldownMs: number): void {
+        const panelRefs = this.partyMemberPanels.get(characterId);
+        if (!panelRefs?.abilityBarElement) return;
+        const slot = panelRefs.abilityBarElement.querySelectorAll('.ability-slot')[slotIndex] as HTMLElement;
+        if (!slot) return;
+        const overlay = slot.querySelector('.cooldown-overlay') as HTMLElement;
+        if (!overlay) return;
+
+        const startTime = Date.now();
+        overlay.style.display = 'block';
+
+        const timer = this.time.addEvent({
+            delay: 100,
+            loop: true,
+            callback: () => {
+                const remaining = Math.max(0, cooldownMs - (Date.now() - startTime));
+                if (remaining <= 0) {
+                    overlay.style.display = 'none';
+                    overlay.textContent = '';
+                    timer.remove();
+                } else {
+                    overlay.textContent = Math.ceil(remaining / 1000).toString();
+                }
+            },
+        });
+    }
+
     // --- Scene Cleanup ---
     shutdown() {
         EventBus.off('chat-message-received', this.handleChatMessage, this);
@@ -614,6 +737,8 @@ export default class UIScene extends Phaser.Scene {
         EventBus.off('update-party-hp', this.handleUpdatePartyHp, this);
         EventBus.off('update-party-xp', this.handleUpdatePartyXp, this);
         EventBus.off('party-member-level-up', this.handlePartyMemberLevelUp, this);
+        EventBus.off('abilities-loaded', this.handleAbilitiesLoaded, this);
+        EventBus.off('spell-cast', this.handleSpellCastCooldown, this);
         // DOM elements added via this.add.dom are usually cleaned up automatically by Phaser
 
         // --- Clean up global listener ---
@@ -812,11 +937,16 @@ export default class UIScene extends Phaser.Scene {
                  slotElement.onmouseleave = () => this.hideItemTooltip();
                  slotElement.style.cursor = 'grab';
 
-                 // Render SVG
+                 // Render item visual
                  let itemVisualHtml = '';
-                 const itemType = item.itemTemplate?.itemType;
-                 const fillColor = '#aaa';
-                 itemVisualHtml = this.getItemSvgShape(itemType, fillColor, 30); // Use helper
+                 const spriteKey = item.itemTemplate?.spriteKey;
+                 if (spriteKey) {
+                     itemVisualHtml = `<img src="assets/sprites/items/${spriteKey}.png" style="width: 32px; height: 32px; object-fit: contain; image-rendering: pixelated;">`;
+                 } else {
+                     const itemType = item.itemTemplate?.itemType;
+                     const fillColor = '#aaa';
+                     itemVisualHtml = this.getItemSvgShape(itemType, fillColor, 30);
+                 }
                  slotElement.innerHTML = itemVisualHtml;
 
                  const itemName = item.itemTemplate?.name ?? 'Unknown Item';
@@ -921,7 +1051,9 @@ export default class UIScene extends Phaser.Scene {
                 <div style="font-weight: bold; color: #eee; margin-bottom: 5px;">${template.name}</div>
                 <div style="margin-bottom: 8px; display: flex; align-items: center;">
                      <div style="width: 40px; height: 40px; background-color: #333; border: 1px solid #555; margin-right: 8px; display: flex; align-items: center; justify-content: center;">
-                         ${this.getItemSvgShape(template.itemType, '#ccc', 30)}
+                         ${template.spriteKey
+                             ? `<img src="assets/sprites/items/${template.spriteKey}.png" style="width: 36px; height: 36px; object-fit: contain; image-rendering: pixelated;">`
+                             : this.getItemSvgShape(template.itemType, '#ccc', 30)}
                      </div>
                      <div style="flex-grow: 1; font-style: italic; color: #bbb;">${template.description || ''}</div>
                 </div>
@@ -1151,7 +1283,11 @@ export default class UIScene extends Phaser.Scene {
 
             if (item && item.itemTemplate) {
                 const template = item.itemTemplate;
-                slotElement.innerHTML = this.getItemSvgShape(template.itemType, '#ddd', 35);
+                if (template.spriteKey) {
+                    slotElement.innerHTML = `<img src="assets/sprites/items/${template.spriteKey}.png" style="width: 36px; height: 36px; object-fit: contain; image-rendering: pixelated;">`;
+                } else {
+                    slotElement.innerHTML = this.getItemSvgShape(template.itemType, '#ddd', 35);
+                }
                 slotElement.title = `${template.name}\n(${slot})`;
                 slotElement.style.borderColor = '#ccc';
                 slotElement.style.cursor = 'pointer';
@@ -1352,8 +1488,15 @@ export default class UIScene extends Phaser.Scene {
     }
     // --- END HELPERS ---
 
+    // --- Hotkey rows per character slot ---
+    private static readonly HOTKEY_ROWS = [
+        ['Q', 'W', 'E', 'R', 'T', 'Y', 'U'],
+        ['A', 'S', 'D', 'F', 'G', 'H', 'J'],
+        ['Z', 'X', 'C', 'V', 'B', 'N', 'M'],
+    ];
+
     // --- Helper to create party member panel HTML (Updated for Bars) ---
-    private _createPartyMemberPanelHTML(characterData: any): string {
+    private _createPartyMemberPanelHTML(characterData: any, partyIndex: number = 0): string {
         const charId = characterData.id || 'unknown';
         const charName = characterData.name || 'Unknown';
         const initialLevel = characterData.level || 1;
@@ -1371,8 +1514,17 @@ export default class UIScene extends Phaser.Scene {
         const hpText = `${initialHp} / ${initialMaxHp}`;
         const xpText = `Lvl ${initialLevel} (${xpInCurrentLevel} / ${xpNeededBetweenLevels})`;
 
+        const hotkeys = UIScene.HOTKEY_ROWS[partyIndex] || UIScene.HOTKEY_ROWS[0];
+        const abilitySlotsHtml = hotkeys.map(key =>
+            `<div class="ability-slot" style="width: 18px; height: 18px; background-color: rgba(0,30,50,0.4); border: 1px solid #334455; border-radius: 2px; position: relative; display: flex; align-items: center; justify-content: center;"><span class="hotkey-label" style="position: absolute; bottom: 1px; right: 2px; font-size: 7px; color: #888;">${key}</span><div class="cooldown-overlay" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); font-size:8px; color:white; text-align:center; line-height:18px; border-radius:2px;"></div></div>`
+        ).join('\n                    ');
+
         return `
-            <div id="party-panel-${charId}" class="party-panel" style="background-color: rgba(0, 0, 0, 0.7); border: 1px solid #555; border-radius: 3px; padding: 5px; font-size: 11px; color: white; font-family: sans-serif; width: 160px;">
+            <div id="party-panel-${charId}" class="party-panel" data-party-index="${partyIndex}" style="background-color: rgba(0, 0, 0, 0.7); border: 1px solid #555; border-radius: 3px; padding: 5px; font-size: 11px; color: white; font-family: sans-serif; width: 160px;">
+                <!-- Ability Bar -->
+                <div class="ability-bar" style="display: flex; flex-direction: row; gap: 2px; margin-bottom: 4px;">
+                    ${abilitySlotsHtml}
+                </div>
                 <div class="party-char-name" style="font-weight: bold; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${charName}</div>
                 <!-- HP Bar -->
                 <div class="hp-bar-container" style="height: 14px; background-color: #500; border: 1px solid #833; border-radius: 2px; margin-bottom: 3px; position: relative;">

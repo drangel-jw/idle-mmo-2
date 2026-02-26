@@ -20,7 +20,8 @@ export class DroppedItemSprite extends Phaser.GameObjects.Sprite {
     tooltipBox: Phaser.GameObjects.Graphics | null = null;
 
     constructor(scene: Phaser.Scene, data: DroppedItemData) {
-        super(scene, data.position.x, data.position.y, data.spriteKey);
+        const textureKey = scene.textures.exists(data.spriteKey) ? data.spriteKey : 'playerPlaceholder';
+        super(scene, data.position.x, data.position.y, textureKey);
         this.instanceId = data.id;
         this.itemData = data;
 
