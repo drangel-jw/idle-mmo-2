@@ -22,10 +22,15 @@ export default class CharacterSelectScene extends Phaser.Scene {
     private availableClasses: CharacterClassTemplateData[] = [];
     private selectedClassId: string | null = null; // Keep for creation modal
     
-    // --- Store Component Instances --- 
+    // --- Store Component Instances ---
     private characterCardComponents: Map<string, CharacterCardComponent> = new Map();
     private classCardComponents: Map<string, CharacterCardComponent> = new Map();
     // -------------------------------
+
+    // Stable bound references for modal event listeners (needed for removeEventListener)
+    private boundHideModal = this.hideCreateCharacterModal.bind(this);
+    private boundHandleCreate = this.handleCreateCharacter.bind(this);
+    private boundUpdateModalButton = this.updateModalCreateButtonState.bind(this);
 
     // UI Elements
     // private characterListText: Phaser.GameObjects.Text[] = []; // REMOVE old text list
@@ -34,7 +39,7 @@ export default class CharacterSelectScene extends Phaser.Scene {
     private statusText!: Phaser.GameObjects.Text;
     private showCreateModalButton!: Phaser.GameObjects.DOMElement;
     private createModalContainer!: Phaser.GameObjects.DOMElement;
-    private modalBgGraphics: Phaser.GameObjects.Graphics | null = null; // For dimming background
+    private modalBgGraphics: Phaser.GameObjects.Graphics | null = null; // Legacy — no longer used for dimming
 
     constructor() {
         super('CharacterSelectScene');
@@ -128,62 +133,75 @@ export default class CharacterSelectScene extends Phaser.Scene {
         });
         this.toggleEnterGameButton(false); // Initially disabled
 
-        // --- Modal Container (Simplified & Centered) ---
+        // --- Modal Container ---
+        // Phaser DOM elements size from their root element's explicit dimensions.
+        // We use the game canvas size for the overlay and compute the class area height
+        // from remaining space so everything fits without flex sizing issues.
+        const modalHeight = Math.floor(height * 0.85);
+        const classAreaHeight = modalHeight - 310; // padding(50) + h2(52) + name input(53) + label(30) + wrapper margin(20) + buttons(50) + buffer
         this.createModalContainer = this.add.dom(centerW, centerH).setOrigin(0.5, 0.5).createFromHTML(`
-            <div id="create-modal" style="
-                width: 800px; 
-                max-width: 95%;
-                max-height: 85vh; 
-                padding: 25px;
-                background-color: #282c34;
-                border-radius: 10px;
-                box-shadow: 0 5px 15px rgba(0,0,0,0.5);
-                color: #fff;
-                border: 1px solid #555;
-                display: flex; 
-                flex-direction: column;
-                box-sizing: border-box;
-                overflow: hidden; /* Hide overflow for now */
+            <div id="create-modal-overlay" style="
+                width: ${width}px;
+                height: ${height}px;
+                background-color: rgba(0,0,0,0.75);
+                display: flex;
+                align-items: center;
+                justify-content: center;
             ">
-                <h2 style="text-align: center; margin-top: 0; margin-bottom: 20px; flex-shrink: 0;">Create New Character</h2>
-                
-                <div style="margin-bottom: 15px; flex-shrink: 0;">
-                   <label for="modalCharName" style="display: block; margin-bottom: 5px;">Name:</label>
-                   <input type="text" id="modalCharName" name="charName" required minlength="3" maxlength="50" 
-                           style="width: 95%; padding: 10px; font-size: 16px; border-radius: 5px; border: 1px solid #ccc; background-color: #444; color: #fff;">
-                </div>
-                
-                <!-- Class Selection Container -->
-                <div style="margin-bottom: 20px; flex-shrink: 1; min-height: 0; overflow: hidden;">
-                    <label style="display: block; margin-bottom: 10px; flex-shrink: 0;">Select Class:</label>
-                    <div id="modal-class-select-container" style="
-                        display: flex;
-                        flex-wrap: wrap; 
-                        gap: 15px;
-                        justify-content: center;
-                        padding: 10px;
-                        border: 1px dashed #555;
-                        border-radius: 5px;
-                        height: 400px; /* Fixed height */
-                        max-height: 100%; 
-                        overflow-y: auto;
-                        box-sizing: border-box;
-                        scrollbar-width: thin; 
-                        scrollbar-color: #888 #333;
-                        "> 
-                        <!-- Class cards go here -->
-                    </div>
-                </div>
-                
-                <!-- Buttons -->
-                <div style="text-align: center; margin-top: auto; padding-top: 20px; flex-shrink: 0;">
-                     <button id="modal-cancel-button" style="padding: 10px 20px; margin-right: 15px; cursor: pointer;">Cancel</button>
-                     <button id="modal-create-button" style="padding: 10px 20px; cursor: pointer; background-color: #888; color: #ccc; border: none; border-radius: 3px;" disabled>Create</button>
-                </div>
+              <div id="create-modal" style="
+                  width: 800px;
+                  max-width: 90%;
+                  height: ${modalHeight}px;
+                  padding: 25px;
+                  background-color: #282c34;
+                  border-radius: 10px;
+                  box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+                  color: #fff;
+                  border: 1px solid #555;
+                  box-sizing: border-box;
+                  overflow: hidden;
+              ">
+                  <h2 style="text-align: center; margin-top: 0; margin-bottom: 20px;">Create New Character</h2>
+
+                  <div style="margin-bottom: 15px;">
+                     <label for="modalCharName" style="display: block; margin-bottom: 5px;">Name:</label>
+                     <input type="text" id="modalCharName" name="charName" required minlength="3" maxlength="50"
+                             style="width: 95%; padding: 10px; font-size: 16px; border-radius: 5px; border: 1px solid #ccc; background-color: #444; color: #fff;">
+                  </div>
+
+                  <!-- Class Selection Container -->
+                  <div style="margin-bottom: 20px;">
+                      <label style="display: block; margin-bottom: 10px;">Select Class:</label>
+                      <div id="modal-class-select-container" style="
+                          display: flex;
+                          flex-wrap: wrap;
+                          gap: 15px;
+                          justify-content: center;
+                          align-content: flex-start;
+                          padding: 10px;
+                          border: 1px dashed #555;
+                          border-radius: 5px;
+                          height: ${classAreaHeight}px;
+                          overflow-y: auto;
+                          box-sizing: border-box;
+                          scrollbar-width: thin;
+                          scrollbar-color: #888 #333;
+                          ">
+                          <!-- Class cards go here -->
+                      </div>
+                  </div>
+
+                  <!-- Buttons -->
+                  <div style="text-align: center; padding-top: 10px;">
+                       <button id="modal-cancel-button" style="padding: 10px 20px; margin-right: 15px; cursor: pointer;">Cancel</button>
+                       <button id="modal-create-button" style="padding: 10px 20px; cursor: pointer; background-color: #888; color: #ccc; border: none; border-radius: 3px;" disabled>Create</button>
+                  </div>
+              </div>
             </div>
           `);
           
-          // --- Set parent container initially invisible --- 
+          // --- Set parent container initially invisible ---
+          this.createModalContainer.setDepth(10);
           this.createModalContainer.setVisible(false); 
           // -----------------------------------------------
           
@@ -334,9 +352,9 @@ export default class CharacterSelectScene extends Phaser.Scene {
                 name: char.name,
                 levelText: `Lv ${char.level} ${charClassData.name}`,
                 spritePaths: {
-                    idle: `assets/sprites/characters/${charClassData.spriteKeyBase}/idle.png`,
-                    attack: `assets/sprites/characters/${charClassData.spriteKeyBase}/attack.png`,
-                    walk: `assets/sprites/characters/${charClassData.spriteKeyBase}/walk.png`,
+                    idle: `assets/sprites/characters/${charClassData.spriteKeyBase.toLowerCase()}/idle.png`,
+                    attack: `assets/sprites/characters/${charClassData.spriteKeyBase.toLowerCase()}/attack.png`,
+                    walk: `assets/sprites/characters/${charClassData.spriteKeyBase.toLowerCase()}/walk.png`,
                 },
                 initialIsSelected: this.selectedCharacterIds.has(char.id)
             };
@@ -501,22 +519,8 @@ export default class CharacterSelectScene extends Phaser.Scene {
 
     // +++ Add Modal Show/Hide Functions +++
     showCreateCharacterModal() {
-        // --- Dim Background using Phaser Graphics --- 
-        if (!this.modalBgGraphics) {
-             const { width, height } = this.scale;
-             this.modalBgGraphics = this.add.graphics({ x: 0, y: 0 });
-             this.modalBgGraphics.fillStyle(0x000000, 0.75); // Black with alpha
-             this.modalBgGraphics.fillRect(0, 0, width, height);
-             this.modalBgGraphics.setInteractive(); // Block clicks behind modal
-             this.modalBgGraphics.setDepth(5); // Ensure it's behind modal DOM but above scene
-        }
-        this.modalBgGraphics.setVisible(true);
-        // -------------------------------------------
-
-        // --- Show the Modal Container --- 
+        // --- Show the Modal Container (overlay is part of the DOM) ---
         this.createModalContainer.setVisible(true);
-        this.createModalContainer.setDepth(6); // Ensure modal DOM is above background
-        // --------------------------------
         
         // Reset state, populate UI, add listeners
         const modalElement = this.createModalContainer.node.querySelector('#create-modal') as HTMLElement;
@@ -529,29 +533,21 @@ export default class CharacterSelectScene extends Phaser.Scene {
             const createButton = modalElement.querySelector('#modal-create-button') as HTMLButtonElement;
             const nameInput = modalElement.querySelector('#modalCharName') as HTMLInputElement;
 
-            cancelButton?.removeEventListener('click', this.hideCreateCharacterModal);
-            cancelButton?.addEventListener('click', this.hideCreateCharacterModal.bind(this));
+            cancelButton?.removeEventListener('click', this.boundHideModal);
+            cancelButton?.addEventListener('click', this.boundHideModal);
 
-            createButton?.removeEventListener('click', this.handleCreateCharacter);
-            createButton?.addEventListener('click', this.handleCreateCharacter.bind(this));
-            
-            nameInput?.removeEventListener('input', this.updateModalCreateButtonState);
-            nameInput?.addEventListener('input', this.updateModalCreateButtonState.bind(this));
+            createButton?.removeEventListener('click', this.boundHandleCreate);
+            createButton?.addEventListener('click', this.boundHandleCreate);
+
+            nameInput?.removeEventListener('input', this.boundUpdateModalButton);
+            nameInput?.addEventListener('input', this.boundUpdateModalButton);
         } else {
             console.error("Could not find #create-modal element for listeners.");
         }
     }
 
     hideCreateCharacterModal() {
-        // --- Hide the Modal Container --- 
-        this.createModalContainer.setVisible(false); 
-        // --------------------------------
-        
-        // --- Hide the Dimming Background --- 
-        if (this.modalBgGraphics) {
-            this.modalBgGraphics.setVisible(false);
-        }
-        // -----------------------------------
+        this.createModalContainer.setVisible(false);
     }
 
     resetModalState() {
@@ -610,9 +606,9 @@ export default class CharacterSelectScene extends Phaser.Scene {
                 name: charClass.name,
                 levelText: undefined, // No level for class selection
                 spritePaths: {
-                    idle: `assets/sprites/characters/${charClass.spriteKeyBase}/idle.png`,
-                    attack: `assets/sprites/characters/${charClass.spriteKeyBase}/attack.png`,
-                    walk: `assets/sprites/characters/${charClass.spriteKeyBase}/walk.png`,
+                    idle: `assets/sprites/characters/${charClass.spriteKeyBase.toLowerCase()}/idle.png`,
+                    attack: `assets/sprites/characters/${charClass.spriteKeyBase.toLowerCase()}/attack.png`,
+                    walk: `assets/sprites/characters/${charClass.spriteKeyBase.toLowerCase()}/walk.png`,
                 },
                 initialIsSelected: this.selectedClassId === charClass.classId
             };
