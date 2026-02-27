@@ -17,13 +17,22 @@ export class CombatVisualManager {
     recentPlayerAttacks: Map<string, number> = new Map();
     recentSpellCasts: Map<string, number> = new Map();
     private screenShakeTween: Phaser.Tweens.Tween | null = null;
+    private tabHidden = false;
+    private boundVisibilityHandler: () => void;
 
     constructor(scene: Phaser.Scene, entityManager: EntityManager) {
         this.scene = scene;
         this.entityManager = entityManager;
+
+        this.boundVisibilityHandler = () => {
+            this.tabHidden = document.hidden;
+        };
+        document.addEventListener('visibilitychange', this.boundVisibilityHandler);
     }
 
     handleCombatAction(data: CombatActionData): void {
+        if (this.tabHidden) return;
+
         const attackerSprite = this.entityManager.playerCharacters.get(data.attackerId) || this.entityManager.otherCharacters.get(data.attackerId);
 
         const isPlayerAttacker = this.entityManager.playerCharacters.has(data.attackerId);
@@ -52,6 +61,14 @@ export class CombatVisualManager {
         if (!sprite) return;
 
         if (sprite instanceof EnemySprite) {
+            if (this.tabHidden) {
+                // Tab hidden: skip death visuals, just remove immediately
+                this.recentPlayerAttacks.delete(entityId);
+                this.entityManager.enemySprites.delete(entityId);
+                sprite.destroy();
+                return;
+            }
+
             const recentAttackTime = this.recentPlayerAttacks.get(entityId);
             if (recentAttackTime) {
                 const timeSinceAttack = Date.now() - recentAttackTime;
@@ -89,6 +106,8 @@ export class CombatVisualManager {
     }
 
     handleSpellDamage(data: any): void {
+        if (this.tabHidden) return;
+
         const spellId = `${data.abilityId}-${Date.now()}`;
         this.recentSpellCasts.set(spellId, Date.now());
 
@@ -186,6 +205,7 @@ export class CombatVisualManager {
     }
 
     destroy(): void {
+        document.removeEventListener('visibilitychange', this.boundVisibilityHandler);
         this.recentPlayerAttacks.clear();
         this.recentSpellCasts.clear();
         if (this.screenShakeTween) {

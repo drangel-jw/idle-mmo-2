@@ -155,7 +155,7 @@ export class GameLoopService implements OnApplicationShutdown {
                             const playerSocket = player.socket;
                             if (playerSocket) {
                                 try {
-                                    const updatedInventory = await this.inventoryService.getUserInventory(player.user.id);
+                                    const updatedInventory = await this.inventoryService.getUserInventorySlots(player.user.id);
                                     playerSocket.emit('inventoryUpdate', { inventory: updatedInventory });
                                 } catch (error) {
                                     this.logger.error(`Failed to send inventoryUpdate to ${player.user.username} after pickup: ${error.message}`, error.stack);

@@ -204,7 +204,7 @@ export class InventoryService {
   // TODO: Add methods for equip/unequip later
 
   // TODO: Consider inventory size limit from User entity or config?
-  async getUserInventorySlots(userId: string, inventorySize: number = 36): Promise<(InventoryItem | null)[]> {
+  async getUserInventorySlots(userId: string, inventorySize: number = GameConfig.INVENTORY.SIZE): Promise<(InventoryItem | null)[]> {
     // Fetch all unequipped items that have an assigned slot for this user
     const itemsInSlots = await this.inventoryItemRepository.find({
       where: {
