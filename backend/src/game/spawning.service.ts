@@ -14,6 +14,27 @@ export class SpawningService {
     ) {}
 
     /**
+     * Pre-populates all nests in a zone to capacity. Called once at server startup
+     * so that enemies exist before any player joins.
+     */
+    async initialPopulateZone(zoneId: string): Promise<number> {
+        const nests = this.nestStateStore.getZoneNests(zoneId);
+        let totalSpawned = 0;
+
+        for (const nest of nests) {
+            while (nest.currentEnemyIds.size < nest.maxCapacity) {
+                const enemy = await this.enemyStateStore.addEnemyFromNest(nest);
+                if (!enemy) break;
+                totalSpawned++;
+            }
+            nest.lastSpawnCheckTime = Date.now();
+        }
+
+        this.logger.log(`Pre-populated zone ${zoneId} with ${totalSpawned} enemies across ${nests.length} nests`);
+        return totalSpawned;
+    }
+
+    /**
      * Processes spawning logic for all nests within a given zone for the current tick.
      * Checks respawn timers and triggers new enemy spawns.
      *
@@ -36,6 +57,7 @@ export class SpawningService {
 
                     if (newEnemy) {
                         spawnedThisTick.push(newEnemy);
+                        nest.lastSpawnCheckTime = now;
                     } else {
                         nest.lastSpawnCheckTime = now;
                     }

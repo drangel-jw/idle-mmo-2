@@ -51,10 +51,17 @@ export class GameLoopService implements OnApplicationShutdown {
         private characterService: CharacterService,
     ) {}
 
-    startLoop(serverInstance: Server): void {
+    async startLoop(serverInstance: Server): Promise<void> {
         if (!this.isLoopRunning) {
             this.server = serverInstance;
             this.broadcastService.setServerInstance(serverInstance);
+
+            // Pre-populate all zones with enemies before accepting players
+            const zoneIds = this.zoneService.getActiveZoneIds();
+            for (const zoneId of zoneIds) {
+                await this.spawningService.initialPopulateZone(zoneId);
+            }
+
             this.logger.log(`Starting game loop with tick rate ${this.TICK_RATE}ms`);
             this.isLoopRunning = true;
             this.scheduleNextTick();

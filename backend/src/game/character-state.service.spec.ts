@@ -248,6 +248,7 @@ describe('CharacterStateService', () => {
         zoneId: 'zone1',
         name: 'Goblin',
         currentHealth: 80,
+        baseHealth: 80,
         position: { x: 101, y: 100 },
         aiState: 'IDLE',
         baseAttack: 8,
@@ -298,7 +299,7 @@ describe('CharacterStateService', () => {
       currentTestCharacter = character;
       const dummyEnemy: EnemyInstance = {
         id: 'enemy1', templateId: 't', zoneId: 'zone1', name: 'Dummy',
-        currentHealth: 1, position: { x: 300, y: 300 }, aiState: 'IDLE',
+        currentHealth: 1, baseHealth: 1, position: { x: 300, y: 300 }, aiState: 'IDLE',
         baseAttack: 1, baseDefense: 1, baseSpeed: 1,
         lootTableId: null, spriteKey: 'goblin',
       };
@@ -320,7 +321,7 @@ describe('CharacterStateService', () => {
         templateId: 'goblin',
         zoneId: 'zone1',
         name: 'Goblin Near',
-        currentHealth: 50,
+        currentHealth: 50, baseHealth: 50,
         position: { x: 150, y: 100 }, // 50 units away
         aiState: 'IDLE',
         baseAttack: 1, baseDefense: 1, baseSpeed: 50,
@@ -343,7 +344,7 @@ describe('CharacterStateService', () => {
         templateId: 'goblin',
         zoneId: 'zone1',
         name: 'Goblin Far',
-        currentHealth: 50,
+        currentHealth: 50, baseHealth: 50,
         position: { x: 250, y: 100 }, // 150 units away
         aiState: 'IDLE',
         baseAttack: 1, baseDefense: 1, baseSpeed: 50,
@@ -375,7 +376,7 @@ describe('CharacterStateService', () => {
         templateId: 'goblin',
         zoneId: 'zone1',
         name: 'Goblin',
-        currentHealth: 80,
+        currentHealth: 80, baseHealth: 80,
         position: { x: 120, y: 100 }, // 20 units, in range
         aiState: 'IDLE',
         baseAttack: 8, baseDefense: 3, baseSpeed: 50,

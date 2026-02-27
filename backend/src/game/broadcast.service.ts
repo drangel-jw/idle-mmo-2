@@ -227,19 +227,27 @@ export class BroadcastService {
         const spellDamages = this.spellDamageQueue.get(zoneId);
 
         // Emit events only if there's data for them
+
+        // IMPORTANT: Send spawns BEFORE entity updates so the frontend creates
+        // sprites before receiving position/health updates that reference them.
+        if (spawns && spawns.length > 0) {
+            spawns.forEach(spawn => {
+                this.server?.to(zoneId).emit('enemySpawned', spawn);
+            });
+            this.spawnQueue.delete(zoneId);
+        }
+
         if (updates && updates.length > 0) {
-            // Client expects { updates: [...] }
             this.server.to(zoneId).emit('entityUpdate', { updates });
-            this.entityUpdateQueue.delete(zoneId); // Clear queue after sending
+            this.entityUpdateQueue.delete(zoneId);
         }
 
         if (actions && actions.length > 0) {
-             // Client expects { actions: [...] }
             this.server.to(zoneId).emit('combatAction', { actions });
-            this.combatActionQueue.delete(zoneId); // Clear queue
+            this.combatActionQueue.delete(zoneId);
         }
 
-        // IMPORTANT: Send spell damage events BEFORE death events 
+        // IMPORTANT: Send spell damage events BEFORE death events
         // so frontend can track enemies as "recently attacked" before processing deaths
         if (spellDamages && spellDamages.length > 0) {
             spellDamages.forEach(spellDamage => {
@@ -249,20 +257,10 @@ export class BroadcastService {
         }
 
         if (deaths && deaths.length > 0) {
-             // Client expects individual 'entityDied' events
             deaths.forEach(death => {
                 this.server?.to(zoneId).emit('entityDied', death);
             });
-            this.deathQueue.delete(zoneId); // Clear queue
-        }
-
-        if (spawns && spawns.length > 0) {
-            // Client expects individual 'enemySpawned' events
-            spawns.forEach(spawn => {
-                this.server?.to(zoneId).emit('enemySpawned', spawn);
-            });
-            this.spawnQueue.delete(zoneId); // Clear queue
-             // Note: The initial entityUpdate for the spawn was queued separately and sent above.
+            this.deathQueue.delete(zoneId);
         }
 
         if (itemsDropped && itemsDropped.length > 0) {

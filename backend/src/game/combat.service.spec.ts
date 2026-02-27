@@ -15,6 +15,7 @@ const createMockEnemy = (id: string, health: number, attack: number, defense: nu
   zoneId: 'test-zone',
   name: `Enemy ${id}`,
   currentHealth: health,
+  baseHealth: health,
   position: { x: 10, y: 10 },
   aiState: 'IDLE',
   baseAttack: attack,

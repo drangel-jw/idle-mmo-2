@@ -25,6 +25,7 @@ const createMockEnemy = (overrides: Partial<EnemyInstance> = {}): EnemyInstance 
   zoneId: 'zone1',
   name: 'Test Goblin',
   currentHealth: 50,
+  baseHealth: 50,
   baseAttack: 8,
   baseDefense: 3,
   baseSpeed: 60,
