@@ -7,6 +7,7 @@ import {
     ICharacterState,
     StateProcessResult,
 } from './character-state.interface';
+import { GameConfig } from '../../common/config/game.config';
 
 export class AttackingState implements ICharacterState {
     private readonly logger = new Logger(AttackingState.name);
@@ -117,7 +118,14 @@ export class AttackingState implements ICharacterState {
                     );
                     for (const member of partyMembers) {
                         if (member.state !== 'dead') {
-                            await characterService.addXp(member.id, enemyTemplate.xpReward);
+                            const scaledXp = this._calculateScaledXp(enemyTemplate.xpReward, member.level, targetEnemy.level);
+                            if (scaledXp > 0) {
+                                await characterService.addXp(member.id, scaledXp);
+                            } else {
+                                this.logger.debug(
+                                    `Skipping XP grant for member ${member.id} (Lv ${member.level}) — enemy Lv ${targetEnemy.level} is trivial`,
+                                );
+                            }
                         } else if (member.state === 'dead') {
                             this.logger.debug(
                                 `Skipping XP grant for dead party member ${member.id}`,
@@ -135,5 +143,23 @@ export class AttackingState implements ICharacterState {
         } catch (error) {
             this.logger.error(`Failed to grant XP to character ${killerCharacter.id} party after killing enemy ${targetEnemy.id}: ${error.message}`, error.stack);
         }
+    }
+
+    private _calculateScaledXp(baseXp: number, characterLevel: number, enemyLevel: number): number {
+        const { FULL_XP_LEVEL_DIFF, ZERO_XP_LEVEL_DIFF, MIN_MULTIPLIER } = GameConfig.EXPERIENCE.XP_SCALING;
+        const levelDiff = characterLevel - enemyLevel;
+
+        if (levelDiff <= FULL_XP_LEVEL_DIFF) {
+            return baseXp; // At-level or underleveled → full XP
+        }
+        if (levelDiff >= ZERO_XP_LEVEL_DIFF) {
+            return Math.floor(baseXp * MIN_MULTIPLIER); // Trivial → zero (or min) XP
+        }
+
+        // Linear falloff between FULL_XP_LEVEL_DIFF and ZERO_XP_LEVEL_DIFF
+        const range = ZERO_XP_LEVEL_DIFF - FULL_XP_LEVEL_DIFF;
+        const stepsIntoRange = levelDiff - FULL_XP_LEVEL_DIFF;
+        const multiplier = 1.0 - (stepsIntoRange / range);
+        return Math.floor(baseXp * multiplier);
     }
 }

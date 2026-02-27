@@ -413,9 +413,9 @@ export class CharacterService {
       leveledUp = true;
 
       // Apply Stat Gains for each level gained in the loop
-      const healthGain = 10;
-      const attackGain = 2;
-      const defenseGain = 1;
+      const healthGain = GameConfig.EXPERIENCE.HEALTH_PER_LEVEL;
+      const attackGain = GameConfig.EXPERIENCE.ATTACK_PER_LEVEL;
+      const defenseGain = GameConfig.EXPERIENCE.DEFENSE_PER_LEVEL;
       character.baseHealth += healthGain;
       character.baseAttack += attackGain;
       character.baseDefense += defenseGain;

@@ -6,7 +6,7 @@ import { CharacterService } from '../character/character.service';
 import { ZoneService } from './zone.service';
 import { GameLoopService } from './game-loop.service';
 import { BroadcastService } from './broadcast.service';
-import { PlayerStateStore, RuntimeCharacterData } from './stores/player-state.store';
+import { PlayerStateStore } from './stores/player-state.store';
 import { EnemyStateStore } from './stores/enemy-state.store';
 import { DroppedItemStore } from './stores/dropped-item.store';
 import { SpellQueueStore } from './stores/spell-queue.store';
@@ -15,7 +15,7 @@ import { AbilityService } from '../abilities/ability.service';
 import { CombatService } from './combat.service';
 import { User } from '../user/user.entity';
 import { Socket, Server } from 'socket.io';
-import { CharacterClass } from '../common/enums/character-class.enum';
+import { createMockUser, createMockRuntimeChar, createMockSocket as createMockSocketFactory } from './test-helpers/factories';
 
 describe('GameGateway - handleDisconnect position save', () => {
   let gateway: GameGateway;
@@ -39,66 +39,14 @@ describe('GameGateway - handleDisconnect position save', () => {
     ensureZone: jest.fn(),
   };
 
-  const mockUser: User = {
-    id: 'user-1',
-    username: 'TestUser',
-    passwordHash: 'hashed',
-    characters: [],
-    inventoryItems: [],
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
+  const mockUser = createMockUser();
 
   const createMockSocket = (overrides: Partial<{ user: User; currentZoneId: string }> = {}): Socket => {
-    const socket = {
-      id: 'socket-1',
-      data: {
-        user: overrides.user ?? mockUser,
-        currentZoneId: overrides.currentZoneId ?? 'zone1',
-      },
-      join: jest.fn(),
-      leave: jest.fn(),
-    } as unknown as Socket;
+    const socket = createMockSocketFactory(overrides.user ?? mockUser);
+    socket.id = 'socket-1';
+    socket.data.currentZoneId = overrides.currentZoneId ?? 'zone1';
     return socket;
   };
-
-  const createMockRuntimeChar = (overrides: Partial<RuntimeCharacterData> = {}): RuntimeCharacterData => ({
-    id: 'char-1',
-    name: 'Hero',
-    userId: mockUser.id,
-    user: mockUser,
-    ownerId: mockUser.id,
-    ownerName: mockUser.username,
-    baseHealth: 100,
-    currentHealth: 80,
-    baseAttack: 10,
-    baseDefense: 5,
-    effectiveAttack: 12,
-    effectiveDefense: 7,
-    positionX: 250,
-    positionY: 350,
-    anchorX: 100,
-    anchorY: 100,
-    leashDistance: 400,
-    state: 'idle',
-    attackTargetId: null,
-    targetItemId: null,
-    commandState: null,
-    targetX: null,
-    targetY: null,
-    attackRange: 50,
-    attackSpeed: 1500,
-    lastAttackTime: 0,
-    aggroRange: 150,
-    timeOfDeath: null,
-    level: 5,
-    xp: 100,
-    currentZoneId: 'zone1',
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    class: CharacterClass.FIGHTER,
-    ...overrides,
-  } as RuntimeCharacterData);
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -132,8 +80,8 @@ describe('GameGateway - handleDisconnect position save', () => {
   it('should capture zoneId before cleanup and save positions with correct zoneId', () => {
     const socket = createMockSocket({ currentZoneId: 'forestZone' });
     const characters = [
-      createMockRuntimeChar({ id: 'char-1', positionX: 250, positionY: 350 }),
-      createMockRuntimeChar({ id: 'char-2', positionX: 400, positionY: 500 }),
+      createMockRuntimeChar(mockUser, { id: 'char-1', positionX: 250, positionY: 350 }),
+      createMockRuntimeChar(mockUser, { id: 'char-2', positionX: 400, positionY: 500 }),
     ];
     mockPlayerStateStore.getPlayerCharacters.mockReturnValue(characters);
     mockPlayerStateStore.removePlayerFromZone.mockReturnValue({ zoneId: 'forestZone', userId: mockUser.id });
@@ -150,8 +98,8 @@ describe('GameGateway - handleDisconnect position save', () => {
   it('should filter out characters with null positions', () => {
     const socket = createMockSocket({ currentZoneId: 'zone1' });
     const characters = [
-      createMockRuntimeChar({ id: 'char-1', positionX: 250, positionY: 350 }),
-      createMockRuntimeChar({ id: 'char-2', positionX: null as any, positionY: 350 }),
+      createMockRuntimeChar(mockUser, { id: 'char-1', positionX: 250, positionY: 350 }),
+      createMockRuntimeChar(mockUser, { id: 'char-2', positionX: null as any, positionY: 350 }),
     ];
     mockPlayerStateStore.getPlayerCharacters.mockReturnValue(characters);
     mockPlayerStateStore.removePlayerFromZone.mockReturnValue({ zoneId: 'zone1', userId: mockUser.id });
@@ -194,7 +142,7 @@ describe('GameGateway - handleDisconnect position save', () => {
       },
     } as unknown as Socket;
     const characters = [
-      createMockRuntimeChar({ id: 'char-1', positionX: 100, positionY: 200 }),
+      createMockRuntimeChar(mockUser, { id: 'char-1', positionX: 100, positionY: 200 }),
     ];
     mockPlayerStateStore.getPlayerCharacters.mockReturnValue(characters);
     mockPlayerStateStore.removePlayerFromZone.mockReturnValue({ zoneId: 'startZone', userId: mockUser.id });
@@ -224,7 +172,7 @@ describe('GameGateway - handleDisconnect position save', () => {
 
   it('should call removePlayerFromZone after saving positions', () => {
     const socket = createMockSocket({ currentZoneId: 'zone1' });
-    const characters = [createMockRuntimeChar({ id: 'char-1', positionX: 100, positionY: 200 })];
+    const characters = [createMockRuntimeChar(mockUser, { id: 'char-1', positionX: 100, positionY: 200 })];
     mockPlayerStateStore.getPlayerCharacters.mockReturnValue(characters);
     mockPlayerStateStore.removePlayerFromZone.mockReturnValue({ zoneId: 'zone1', userId: mockUser.id });
 
@@ -251,7 +199,7 @@ describe('GameGateway - handleDisconnect position save', () => {
   it('should capture zoneId before removePlayerFromZone is called', () => {
     // Verify the ordering: positions saved with correct zoneId means it was captured first
     const socket = createMockSocket({ currentZoneId: 'capturedZone' });
-    const characters = [createMockRuntimeChar({ id: 'char-1', positionX: 100, positionY: 200 })];
+    const characters = [createMockRuntimeChar(mockUser, { id: 'char-1', positionX: 100, positionY: 200 })];
     mockPlayerStateStore.getPlayerCharacters.mockReturnValue(characters);
     mockPlayerStateStore.removePlayerFromZone.mockImplementation(() => {
       // After removal, zoneId should already have been captured
@@ -283,7 +231,7 @@ describe('GameGateway - handleDisconnect position save', () => {
 
   it('should handle saveCharacterPositions errors gracefully (fire-and-forget)', () => {
     const socket = createMockSocket({ currentZoneId: 'zone1' });
-    const characters = [createMockRuntimeChar({ id: 'char-1', positionX: 100, positionY: 200 })];
+    const characters = [createMockRuntimeChar(mockUser, { id: 'char-1', positionX: 100, positionY: 200 })];
     mockPlayerStateStore.getPlayerCharacters.mockReturnValue(characters);
     mockPlayerStateStore.removePlayerFromZone.mockReturnValue({ zoneId: 'zone1', userId: mockUser.id });
     mockCharacterService.saveCharacterPositions.mockRejectedValueOnce(new Error('DB error'));

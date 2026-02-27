@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
 import { GameLoopService } from './game-loop.service';
 import { ZoneService } from './zone.service';
-import { PlayerStateStore, RuntimeCharacterData, PlayerInZone } from './stores/player-state.store';
+import { PlayerStateStore } from './stores/player-state.store';
 import { EnemyStateStore } from './stores/enemy-state.store';
 import { NestStateStore } from './stores/nest-state.store';
 import { DroppedItemStore } from './stores/dropped-item.store';
@@ -19,79 +19,27 @@ import { InventoryService } from '../inventory/inventory.service';
 import { AbilityService } from '../abilities/ability.service';
 import { CharacterService } from '../character/character.service';
 import { EnemyService } from '../enemy/enemy.service';
-import { CharacterClass } from '../common/enums/character-class.enum';
 import { GameConfig } from '../common/config/game.config';
 import { User } from '../user/user.entity';
 import { Character } from '../character/character.entity';
 import { EnemyInstance } from './interfaces/enemy-instance.interface';
 import { SpawnNest } from './interfaces/spawn-nest.interface';
 import { Server } from 'socket.io';
+import {
+  createMockUser,
+  createMockCharacter as createMockCharacterFactory,
+  createMockSocket,
+  createTestEnemy,
+} from './test-helpers/factories';
 
 // ─── Shared Helpers ──────────────────────────────────────────────────────────
 
 const ZONE_ID = 'startZone';
 
-const mockUser = (overrides: Partial<User> = {}): User => ({
-  id: 'user-1',
-  username: 'TestUser',
-  passwordHash: 'hashed',
-  characters: [],
-  inventoryItems: [],
-  createdAt: new Date(),
-  updatedAt: new Date(),
-  ...overrides,
-} as User);
+const mockUser = (overrides: Partial<User> = {}): User => createMockUser(overrides);
 
-const createMockCharacter = (overrides: Partial<Character> = {}): Character => ({
-  id: 'char-1',
-  name: 'Hero',
-  userId: 'user-1',
-  user: mockUser(),
-  positionX: 200,
-  positionY: 300,
-  currentZoneId: ZONE_ID,
-  level: 5,
-  xp: 100,
-  baseHealth: 100,
-  baseAttack: 15,
-  baseDefense: 5,
-  attackSpeed: 1500,
-  attackRange: 50,
-  aggroRange: 150,
-  leashDistance: 400,
-  class: CharacterClass.FIGHTER,
-  createdAt: new Date(),
-  updatedAt: new Date(),
-  ...overrides,
-} as Character);
-
-const createMockSocket = (user: User = mockUser()): any => {
-  const socket = {
-    id: `socket-${user.id}`,
-    data: { user },
-    join: jest.fn(),
-    leave: jest.fn(),
-    emit: jest.fn(),
-  };
-  return socket;
-};
-
-const createTestEnemy = (zoneId: string, overrides: Partial<EnemyInstance> = {}): EnemyInstance => ({
-  id: 'enemy-1',
-  templateId: 'tmpl-goblin',
-  zoneId,
-  name: 'Goblin',
-  currentHealth: 50,
-  baseHealth: 50,
-  baseAttack: 8,
-  baseDefense: 3,
-  baseSpeed: 75,
-  position: { x: 300, y: 300 },
-  aiState: 'IDLE',
-  lootTableId: null,
-  spriteKey: 'goblin',
-  ...overrides,
-});
+const createMockCharacter = (overrides: Partial<Character> = {}): Character =>
+  createMockCharacterFactory({ currentZoneId: ZONE_ID, ...overrides });
 
 // ─── Integration Test Module Builder ─────────────────────────────────────────
 
@@ -580,6 +528,7 @@ describe('Game Integration Tests', () => {
           positionY: 200,
           attackRange: 50,
           baseAttack: 100,
+          level: 1,
           currentZoneId: ZONE_ID,
         }),
       ]);
@@ -588,6 +537,7 @@ describe('Game Integration Tests', () => {
       ctx.mockEnemyService.findOne.mockResolvedValue({
         id: 'tmpl-goblin',
         name: 'Goblin',
+        level: 1,
         baseHealth: 50,
         baseAttack: 8,
         baseDefense: 0,

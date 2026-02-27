@@ -23,6 +23,7 @@ const createMockEnemy = (id: string, health: number, attack: number, defense: nu
   baseSpeed: 75,
   lootTableId: null,
   spriteKey: 'goblin',
+  level: 1,
 });
 
 const createMockCharacter = (id: string, health: number, attack: number, defense: number): RuntimeCharacterData => ({

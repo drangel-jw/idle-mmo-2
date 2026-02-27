@@ -71,25 +71,30 @@ export class PlayerStateStore {
         private readonly enemyStateStore: EnemyStateStore,
     ) {}
 
+    /** Initializes the player map for a zone if it doesn't already exist. */
     ensureZone(zoneId: string): void {
         if (!this.players.has(zoneId)) {
             this.players.set(zoneId, new Map());
         }
     }
 
+    /** Returns all players currently in the given zone. */
     getPlayersInZone(zoneId: string): PlayerInZone[] {
         const zonePlayers = this.players.get(zoneId);
         return zonePlayers ? Array.from(zonePlayers.values()) : [];
     }
 
+    /** Returns the number of players in the given zone. */
     getPlayerCount(zoneId: string): number {
         return this.players.get(zoneId)?.size ?? 0;
     }
 
+    /** Returns the raw userId-to-PlayerInZone map for a zone, or undefined if the zone doesn't exist. */
     getPlayerMap(zoneId: string): Map<string, PlayerInZone> | undefined {
         return this.players.get(zoneId);
     }
 
+    /** Adds a player and their characters to a zone, restoring saved positions if available. */
     async addPlayerToZone(zoneId: string, playerSocket: Socket, user: User, characters: Character[]): Promise<void> {
         this.ensureZone(zoneId);
         const zonePlayers = this.players.get(zoneId)!;
@@ -168,6 +173,7 @@ export class PlayerStateStore {
         // to avoid duplicate events reaching other clients.
     }
 
+    /** Removes a player from whichever zone they're in. Returns the zoneId and userId, or null if not found. */
     removePlayerFromZone(playerSocket: Socket): { zoneId: string; userId: string } | null {
         const user = playerSocket.data.user as User;
         if (!user) return null;
@@ -183,6 +189,7 @@ export class PlayerStateStore {
         return null;
     }
 
+    /** Returns lightweight character state snapshots for all players in a zone, optionally excluding one user. */
     getZoneCharacterStates(zoneId: string, excludeUserId?: string): ZoneCharacterState[] {
         const players = this.getPlayersInZone(zoneId);
         const characterStates: ZoneCharacterState[] = [];
@@ -209,6 +216,7 @@ export class PlayerStateStore {
         return characterStates;
     }
 
+    /** Returns a player's runtime characters. Searches a specific zone if provided, otherwise scans all zones. */
     getPlayerCharacters(userId: string, zoneId?: string): RuntimeCharacterData[] | undefined {
         if (zoneId) {
             return this.players.get(zoneId)?.get(userId)?.characters;
@@ -221,6 +229,7 @@ export class PlayerStateStore {
         return undefined;
     }
 
+    /** Returns a player's characters in a specific zone, or an empty array if not found. */
     getPlayerCharactersInZone(zoneId: string, playerId: string): RuntimeCharacterData[] {
         const zonePlayers = this.players.get(zoneId);
         if (!zonePlayers) return [];
@@ -229,6 +238,7 @@ export class PlayerStateStore {
         return player.characters;
     }
 
+    /** Looks up a single character by ID within a zone, scanning all players. */
     getCharacterStateById(zoneId: string, characterId: string): RuntimeCharacterData | undefined {
         const zonePlayers = this.players.get(zoneId);
         if (!zonePlayers) return undefined;
@@ -239,6 +249,7 @@ export class PlayerStateStore {
         return undefined;
     }
 
+    /** Sets a character's movement target coordinates. Returns the zone and character, or null if not found. */
     setCharacterTargetPosition(userId: string, characterId: string, targetX: number, targetY: number): { zoneId: string; character: RuntimeCharacterData } | null {
         for (const [zoneId, zonePlayers] of this.players.entries()) {
             const player = zonePlayers.get(userId);
@@ -254,6 +265,7 @@ export class PlayerStateStore {
         return null;
     }
 
+    /** Updates a character's current position (positionX/positionY) in-place. */
     updateCharacterCurrentPosition(userId: string, characterId: string, currentX: number, currentY: number): RuntimeCharacterData | null {
         for (const [, zonePlayers] of this.players.entries()) {
             const player = zonePlayers.get(userId);
@@ -269,6 +281,7 @@ export class PlayerStateStore {
         return null;
     }
 
+    /** Applies a health delta to a character, clamped to [0, baseHealth]. Transitions to 'dead' state if health reaches 0. */
     async updateCharacterHealth(ownerId: string, characterId: string, healthChange: number): Promise<number | null> {
         let foundCharacter: RuntimeCharacterData | null = null;
 
@@ -307,6 +320,7 @@ export class PlayerStateStore {
         return foundCharacter.currentHealth;
     }
 
+    /** Sets a character's health to an absolute value, clamped to [0, baseHealth]. */
     setCharacterHealth(characterId: string, newHealthValue: number): boolean {
         for (const [, zonePlayers] of this.players.entries()) {
             for (const player of zonePlayers.values()) {
@@ -324,6 +338,7 @@ export class PlayerStateStore {
         return false;
     }
 
+    /** Updates a character's effective attack and defense stats (e.g., after equipment changes). */
     async updateCharacterEffectiveStats(characterId: string, stats: { effectiveAttack: number; effectiveDefense: number }): Promise<boolean> {
         for (const [, zonePlayers] of this.players.entries()) {
             for (const player of zonePlayers.values()) {
@@ -349,6 +364,7 @@ export class PlayerStateStore {
         return null;
     }
 
+    /** Sets a character's state (idle, moving, attacking, etc.) and broadcasts the change if it differs. */
     setCharacterState(zoneId: string, characterId: string, newState: RuntimeCharacterData['state']): boolean {
         const character = this.findCharacterInZone(zoneId, characterId);
         if (!character) {
@@ -367,6 +383,8 @@ export class PlayerStateStore {
         return true;
     }
 
+    // TODO: Consider splitting into setMoveToPosition (player-initiated) vs setMoveToAttack (combat walk-to-enemy)
+    /** Sets a movement target and transitions the character to 'moving' state, clearing any attack/loot targets. */
     setMovementTarget(zoneId: string, characterId: string, targetX: number, targetY: number): boolean {
         const character = this.findCharacterInZone(zoneId, characterId);
         if (!character) {
@@ -384,6 +402,7 @@ export class PlayerStateStore {
         return true;
     }
 
+    /** Assigns an attack target after validating the enemy exists and is alive. Falls back to 'idle' on invalid target. */
     setAttackTarget(zoneId: string, characterId: string, targetEnemyId: string): boolean {
         const character = this.findCharacterInZone(zoneId, characterId);
         if (!character) {
@@ -408,6 +427,7 @@ export class PlayerStateStore {
         return true;
     }
 
+    /** Sets a character to move toward a specific dropped item for looting. */
     setCharacterLootTarget(userId: string, characterId: string, itemId: string, itemX: number, itemY: number): boolean {
         for (const [, zonePlayers] of this.players.entries()) {
             const player = zonePlayers.get(userId);
@@ -427,6 +447,7 @@ export class PlayerStateStore {
         return false;
     }
 
+    /** Puts a character into area-looting mode, automatically picking up nearby dropped items. */
     setCharacterLootArea(userId: string, characterId: string): boolean {
         for (const [, zonePlayers] of this.players.entries()) {
             const player = zonePlayers.get(userId);
@@ -453,9 +474,13 @@ export class PlayerStateStore {
         return false;
     }
 
+    /** Updates a character's anchor position, used as the return point for leash distance calculations. */
     setCharacterAnchor(zoneId: string, characterId: string, anchorX: number, anchorY: number): boolean {
         const character = this.findCharacterInZone(zoneId, characterId);
-        if (!character) return false;
+        if (!character) {
+            this.logger.warn(`[setCharacterAnchor] Character ${characterId} could not be located in zone ${zoneId}`);
+            return false;
+        }
         character.anchorX = anchorX;
         character.anchorY = anchorY;
         return true;

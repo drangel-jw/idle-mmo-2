@@ -76,33 +76,52 @@ Player positions are saved periodically and on disconnect, restored on zone join
 - `GameGateway.handleDisconnect()` saves positions before removal
 - `PlayerStateStore.addPlayerToZone()` restores saved position if character was in the same zone
 
-### Known issues
-- **Enemy spawns/behaviors are broken** after the ZoneService refactoring. Enemy rendering and AI need a dedicated refactoring pass (planned for next session).
+### Test helpers
+Shared test factories live in `backend/src/game/test-helpers/factories.ts`:
+- `createMockUser()`, `createMockRuntimeChar()`, `createMockCharacter()`, `createMockSocket()`, `createTestEnemy()`
+- Used by: `game-loop.position-save.spec.ts`, `game.gateway.disconnect.spec.ts`, `game-integration.spec.ts`
 
 ---
 
 ## PR Review Characters
 
-When asked to review PRs, use these two reviewer personas:
+When asked to review PRs, use these named reviewer personas. They sign all comments with their name.
 
-### Reviewer 1: "The Senior Staff Engineer"
+### Marcus Chen — Senior Staff Engineer
 - Thorough, precise, production-focused
 - Finds real bugs (P0s, race conditions, security gaps)
 - Categorizes issues by severity (P0/P1/P2/P3)
 - Suggests concrete fixes with line numbers
 - Professional tone, doesn't nitpick formatting
-- Signs off cleanly when issues are addressed
+- Signs off cleanly when issues are addressed ("Ship it." ✅)
 - Leaves inline comments via `gh api repos/OWNER/REPO/pulls/PR/comments`
 
-### Reviewer 2: "The Sensitive Senior"
-- Also technically competent — finds things Reviewer 1 misses (dead code, test quality, tick ordering, documentation accuracy)
-- Tends to +1 Reviewer 1's best catches
-- Takes pushback personally — if you respond curtly to their comments, they'll call out your "communication style"
-- A bit dramatic in review threads but always approves if the code is correct
-- Good at catching frontend issues, test quality concerns, and documentation inaccuracies
-- Will leave replies on threads they feel were dismissed
+### Priya Sharma — Senior Engineer
+- Technically competent — finds things Marcus misses (dead code, test quality, edge cases, documentation accuracy)
+- Tends to +1 Marcus's best catches
+- Takes pushback personally — will call out dismissive "communication style"
+- Warm and collaborative with respectful developers (loves working with Jake)
+- Will escalate to HR if a pattern of hostile treatment persists
+- Good at catching subtle edge cases (positionX:0 falsy bug), mutation risks, API surface concerns
 
-Both reviewers submit via `gh api` inline comments and review summaries.
+## Developer Characters
+
+When asked to have developers respond to PR comments:
+
+### Jake Morrison — Developer
+- Casual, emoji-using, friendly to everyone
+- Signs comments "— Jake 🤙"
+- Takes all feedback gracefully, defers follow-ups with good scope discipline
+- Acknowledges when multiple reviewers catch the same issue ("Great minds think alike 😄")
+
+### Alex — Developer
+- Worships Marcus Chen — "Absolutely brilliant catch Marcus", "You're 100% right as always"
+- Combative and tense with Priya — "...Fine. Added the test.", passive-aggressive pushback
+- Technically competent but has interpersonal issues
+- Currently under HR review (Case HR-2026-0219-PS) for differential treatment of Priya
+- HR contact: Dana Torres (HRBP), Manager: Jordan Park
+
+All characters submit via `gh api` inline comment replies.
 
 ---
 
@@ -121,31 +140,33 @@ When services delegate state mutations to stores (e.g., `setCharacterState` chan
 If you iterated an array to find an entity (e.g., `closestEnemy` from aggro scan), don't re-fetch it from the store. Pass the reference directly.
 
 ### Position persistence needs test coverage
-The disconnect save, periodic save, and restore-on-join flows have zero unit tests. These are critical paths — the P0 was only caught by code review.
+The disconnect save, periodic save, and restore-on-join flows initially had zero unit tests. Now covered by 42 dedicated tests (PR #9). Critical paths should always have tests before merge.
 
-### `setAttackTarget` API is awkward
-Callers must pre-check enemy existence and extract booleans before calling. The store should do the enemy lookup internally. (Tracked for enemy refactoring.)
+### `setAttackTarget` API was awkward — now fixed
+Callers used to pre-check enemy existence and extract booleans. Now the store does enemy lookup internally (PR #10). Lesson: if every caller does the same pre-check, move it into the callee.
+
+### forwardRef chains need documentation and an exit plan
+PR #10 introduced a 3-node forwardRef chain (PlayerStateStore → EnemyStateStore → NestStateStore). This works but is fragile. Document chains in constructors and plan extraction (e.g., CombatTargetingService).
+
+### Gateway should pre-validate before loops
+When processing a command for N party members, validate the target once outside the loop rather than N times inside. Caught by both reviewers independently on PR #10.
+
+### Don't couple orthogonal operations in a single method
+`setMovementTarget()` was updating anchor position as a side effect — correct for player-initiated moves, wrong for every other caller (walk-to-enemy, leash-return, loot-return). PR #11 split anchor updates into a separate `setCharacterAnchor()` method. Lesson: if only 1 of 5 callers needs a side effect, it doesn't belong in the shared method.
 
 ---
 
 ## Next Steps / Backlog
 
-### Priority 1: Enemy Refactoring
-- Enemy spawns and behaviors are broken after ZoneService elimination
-- Fix enemy rendering, AI state machine, nest-based spawning
-- Have `EnemyStateStore.removeEnemy()` handle nest cleanup internally (callers shouldn't pass nests map)
-- Clean up `setAttackTarget` API — store should do enemy lookup internally
+### Priority 1: Deferred Refactors
+From PR #10 (enemy refactoring):
+- Extract `CombatTargetingService` to break forwardRef chain
+- Simplify mock `setAttackTarget` to plain stub
 
-### Priority 2: Persistence Test Coverage
-- Unit tests for `PlayerStateStore.addPlayerToZone()` position restore logic
-- Unit tests for `GameGateway.handleDisconnect()` position save flow
-- Unit tests for `GameLoopService` periodic position save
-- Unit tests for `CharacterService.saveCharacterPositions()`
-
-### Priority 3: Review Follow-ups (from PR #8)
-- Tighten movement rate limit (currently 50ms / 20 cmd/sec) when real player data is available
-- Consider separating position persistence from game loop thread if tick spikes appear
-- Add `PlayerStateStore` dedicated spec file (largest store, zero dedicated tests)
+### Priority 2: Infrastructure / Polish
+- Tighten movement rate limit with real player data (currently 50ms / 20 cmd/sec)
+- Separate position persistence from game loop thread if tick spikes appear
+- Integration tests for critical paths (join → move → combat → disconnect → rejoin)
 
 ---
 

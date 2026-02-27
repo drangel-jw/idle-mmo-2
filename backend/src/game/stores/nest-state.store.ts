@@ -15,12 +15,14 @@ export class NestStateStore implements OnModuleInit {
         await this.initializeDynamicNests('startZone');
     }
 
+    /** Creates the zone's nest map if it doesn't already exist. */
     ensureZone(zoneId: string): void {
         if (!this.nests.has(zoneId)) {
             this.nests.set(zoneId, new Map());
         }
     }
 
+    /** Fetches all enemy templates from the DB and creates randomized spawn nests for the zone. */
     async initializeDynamicNests(zoneId: string): Promise<void> {
         this.ensureZone(zoneId);
         const zoneNests = this.nests.get(zoneId)!;
@@ -67,12 +69,21 @@ export class NestStateStore implements OnModuleInit {
         this.logger.log(`Initialized ${zoneNests.size} nests for zone ${zoneId}`);
     }
 
+    /** Returns all nests in the given zone, or an empty array if the zone has none. */
     getZoneNests(zoneId: string): SpawnNest[] {
         const zoneNests = this.nests.get(zoneId);
         return zoneNests ? Array.from(zoneNests.values()) : [];
     }
 
+    /** Looks up a single nest by zone and nest ID. */
     getNest(zoneId: string, nestId: string): SpawnNest | undefined {
         return this.nests.get(zoneId)?.get(nestId);
+    }
+
+    /** Removes an enemy from a nest's tracking set. Returns false if the nest or enemy was not found. */
+    removeEnemyFromNest(zoneId: string, nestId: string, enemyId: string): boolean {
+        const nest = this.getNest(zoneId, nestId);
+        if (!nest) return false;
+        return nest.currentEnemyIds.delete(enemyId);
     }
 }

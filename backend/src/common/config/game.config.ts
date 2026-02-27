@@ -34,9 +34,16 @@ export const GameConfig = {
     LEVEL_EXPONENT: parseFloat(process.env.LEVEL_EXPONENT || '1.5'),
     
     // Stat gains per level up
-    HEALTH_PER_LEVEL: 5,
+    HEALTH_PER_LEVEL: 10,
     ATTACK_PER_LEVEL: 2,
     DEFENSE_PER_LEVEL: 1,
+
+    // XP scaling based on level difference (character level - enemy level)
+    XP_SCALING: {
+      FULL_XP_LEVEL_DIFF: 2,   // charLevel - enemyLevel <= this → 100% XP
+      ZERO_XP_LEVEL_DIFF: 6,   // charLevel - enemyLevel >= this → 0% XP
+      MIN_MULTIPLIER: 0,       // floor multiplier (0 = enemies can become worthless)
+    },
   },
 
   // === Inventory System ===

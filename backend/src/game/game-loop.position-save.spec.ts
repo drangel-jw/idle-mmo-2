@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { GameLoopService } from './game-loop.service';
 import { ZoneService } from './zone.service';
-import { PlayerStateStore, RuntimeCharacterData, PlayerInZone } from './stores/player-state.store';
+import { PlayerStateStore, PlayerInZone } from './stores/player-state.store';
 import { EnemyStateStore } from './stores/enemy-state.store';
 import { NestStateStore } from './stores/nest-state.store';
 import { DroppedItemStore } from './stores/dropped-item.store';
@@ -17,10 +17,10 @@ import { LootService } from '../loot/loot.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { AbilityService } from '../abilities/ability.service';
 import { CharacterService } from '../character/character.service';
-import { CharacterClass } from '../common/enums/character-class.enum';
 import { GameConfig } from '../common/config/game.config';
 import { User } from '../user/user.entity';
 import { Server } from 'socket.io';
+import { createMockUser, createMockRuntimeChar } from './test-helpers/factories';
 
 /**
  * Tests for the periodic position save logic inside GameLoopService.tickGameLoop().
@@ -31,53 +31,7 @@ import { Server } from 'socket.io';
 describe('GameLoopService - periodic position save', () => {
   let service: GameLoopService;
 
-  const mockUser: User = {
-    id: 'user-1',
-    username: 'TestUser',
-    passwordHash: 'hashed',
-    characters: [],
-    inventoryItems: [],
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
-
-  const createMockRuntimeChar = (overrides: Partial<RuntimeCharacterData> = {}): RuntimeCharacterData => ({
-    id: 'char-1',
-    name: 'Hero',
-    userId: mockUser.id,
-    user: mockUser,
-    ownerId: mockUser.id,
-    ownerName: mockUser.username,
-    baseHealth: 100,
-    currentHealth: 80,
-    baseAttack: 10,
-    baseDefense: 5,
-    effectiveAttack: 12,
-    effectiveDefense: 7,
-    positionX: 250,
-    positionY: 350,
-    anchorX: 100,
-    anchorY: 100,
-    leashDistance: 400,
-    state: 'idle',
-    attackTargetId: null,
-    targetItemId: null,
-    commandState: null,
-    targetX: null,
-    targetY: null,
-    attackRange: 50,
-    attackSpeed: 1500,
-    lastAttackTime: 0,
-    aggroRange: 150,
-    timeOfDeath: null,
-    level: 5,
-    xp: 100,
-    currentZoneId: 'zone1',
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    class: CharacterClass.FIGHTER,
-    ...overrides,
-  } as RuntimeCharacterData);
+  const mockUser = createMockUser();
 
   const mockZoneService = { getActiveZoneIds: jest.fn().mockReturnValue([]), createZone: jest.fn() };
   const mockPlayerStateStore = {
@@ -196,7 +150,7 @@ describe('GameLoopService - periodic position save', () => {
     // Set lastPositionSaveTime to far in the past so interval is exceeded
     (service as any).lastPositionSaveTime = 0;
 
-    const runtimeChar = createMockRuntimeChar({ id: 'char-1', positionX: 200, positionY: 300 });
+    const runtimeChar = createMockRuntimeChar(mockUser, { id: 'char-1', positionX: 200, positionY: 300 });
     const mockSocket = { emit: jest.fn() } as any;
     const playerInZone: PlayerInZone = {
       socket: mockSocket,
@@ -227,7 +181,7 @@ describe('GameLoopService - periodic position save', () => {
     // Set lastPositionSaveTime to right now so interval is NOT exceeded
     (service as any).lastPositionSaveTime = Date.now();
 
-    const runtimeChar = createMockRuntimeChar({ id: 'char-1', positionX: 200, positionY: 300 });
+    const runtimeChar = createMockRuntimeChar(mockUser, { id: 'char-1', positionX: 200, positionY: 300 });
     const mockSocket = { emit: jest.fn() } as any;
     const playerInZone: PlayerInZone = {
       socket: mockSocket,
@@ -266,8 +220,8 @@ describe('GameLoopService - periodic position save', () => {
   it('should skip characters with null positions when saving', async () => {
     (service as any).lastPositionSaveTime = 0;
 
-    const charWithPos = createMockRuntimeChar({ id: 'char-1', positionX: 200, positionY: 300 });
-    const charNullPos = createMockRuntimeChar({ id: 'char-2', positionX: null as any, positionY: null as any });
+    const charWithPos = createMockRuntimeChar(mockUser, { id: 'char-1', positionX: 200, positionY: 300 });
+    const charNullPos = createMockRuntimeChar(mockUser, { id: 'char-2', positionX: null as any, positionY: null as any });
     const mockSocket = { emit: jest.fn() } as any;
     const playerInZone: PlayerInZone = {
       socket: mockSocket,
@@ -312,7 +266,7 @@ describe('GameLoopService - periodic position save', () => {
     // Make saveCharacterPositions reject
     mockCharacterService.saveCharacterPositions.mockRejectedValueOnce(new Error('DB down'));
 
-    const runtimeChar = createMockRuntimeChar({ id: 'char-1', positionX: 100, positionY: 100 });
+    const runtimeChar = createMockRuntimeChar(mockUser, { id: 'char-1', positionX: 100, positionY: 100 });
     const mockSocket = { emit: jest.fn() } as any;
     const playerInZone: PlayerInZone = {
       socket: mockSocket,
@@ -339,8 +293,8 @@ describe('GameLoopService - periodic position save', () => {
   it('should collect positions from multiple zones', async () => {
     (service as any).lastPositionSaveTime = 0;
 
-    const char1 = createMockRuntimeChar({ id: 'char-1', positionX: 100, positionY: 200 });
-    const char2 = createMockRuntimeChar({ id: 'char-2', positionX: 300, positionY: 400 });
+    const char1 = createMockRuntimeChar(mockUser, { id: 'char-1', positionX: 100, positionY: 200 });
+    const char2 = createMockRuntimeChar(mockUser, { id: 'char-2', positionX: 300, positionY: 400 });
     const mockSocket = { emit: jest.fn() } as any;
     const player1: PlayerInZone = { socket: mockSocket, user: mockUser, characters: [char1] };
     const player2: PlayerInZone = { socket: mockSocket, user: { ...mockUser, id: 'user-2' } as User, characters: [char2] };

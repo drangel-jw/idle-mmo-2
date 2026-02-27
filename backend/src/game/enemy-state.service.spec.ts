@@ -40,6 +40,7 @@ const createMockEnemy = (overrides: Partial<EnemyInstance> = {}): EnemyInstance 
   currentTargetId: null,
   lootTableId: null,
   spriteKey: 'goblin',
+  level: 1,
   ...overrides,
 });
 

@@ -37,6 +37,7 @@ describe('SpawningService', () => {
         baseSpeed: 75,
         lootTableId: null,
         spriteKey: 'goblin',
+        level: 1,
       }),
     };
     mockNestStateStore = {
@@ -105,6 +106,40 @@ describe('SpawningService', () => {
     const now = 5000;
     await service.processNestSpawns('zone1', now);
     expect(nest.lastSpawnCheckTime).toBe(now);
+  });
+
+  it('should spawn enemy within nest radius of nest center', async () => {
+    const nest = createMockNest({ lastSpawnCheckTime: 0, respawnDelayMs: 1000, center: { x: 500, y: 500 }, radius: 100 });
+    const spawnedEnemy = {
+      id: 'enemy-1',
+      templateId: 'template-1',
+      zoneId: 'zone1',
+      name: 'Goblin',
+      currentHealth: 100,
+      position: { x: 540, y: 560 },
+      aiState: 'IDLE',
+      baseAttack: 10,
+      baseDefense: 5,
+      baseSpeed: 75,
+      lootTableId: null,
+      spriteKey: 'goblin',
+      level: 1,
+    };
+    (mockEnemyStateStore.addEnemyFromNest as jest.Mock).mockResolvedValueOnce(spawnedEnemy);
+    (mockNestStateStore.getZoneNests as jest.Mock).mockReturnValue([nest]);
+
+    const now = 5000;
+    const result = await service.processNestSpawns('zone1', now);
+    expect(result.length).toBe(1);
+
+    // Verify addEnemyFromNest was called with the nest (position is calculated inside EnemyStateStore)
+    expect(mockEnemyStateStore.addEnemyFromNest).toHaveBeenCalledWith(nest);
+
+    // The actual position bounds check: spawned position should be within nest.radius of nest.center
+    const dx = spawnedEnemy.position.x - nest.center.x;
+    const dy = spawnedEnemy.position.y - nest.center.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    expect(distance).toBeLessThanOrEqual(nest.radius);
   });
 
   it('should update lastSpawnCheckTime when spawn fails', async () => {

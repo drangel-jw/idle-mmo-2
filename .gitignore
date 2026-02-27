@@ -27,7 +27,8 @@ lerna-debug.log*
 *.launch
 .settings/
 *.sublime-workspace
-
+CLAUDE.md
+hr-meeting-transcript-priya-alex.md
 # IDE - VSCode
 .vscode/*
 !.vscode/settings.json

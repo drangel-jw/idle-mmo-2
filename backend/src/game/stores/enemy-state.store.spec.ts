@@ -33,6 +33,7 @@ describe('EnemyStateStore', () => {
     };
     mockNestStateStore = {
       getNest: jest.fn().mockReturnValue(undefined),
+      removeEnemyFromNest: jest.fn().mockReturnValue(false),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -141,15 +142,13 @@ describe('EnemyStateStore', () => {
         respawnDelayMs: 5000,
         lastSpawnCheckTime: 0,
       };
-      // Configure the mock to return this nest when looked up
-      (mockNestStateStore.getNest as jest.Mock).mockReturnValue(mockNest);
+      (mockNestStateStore.removeEnemyFromNest as jest.Mock).mockReturnValue(true);
 
       const enemy = await store.addEnemyFromNest(mockNest);
       expect(nestEnemyIds.has(enemy!.id)).toBe(true);
 
       store.removeEnemy('zone1', enemy!.id);
-      expect(mockNestStateStore.getNest).toHaveBeenCalledWith('zone1', 'nest-1');
-      expect(nestEnemyIds.has(enemy!.id)).toBe(false);
+      expect(mockNestStateStore.removeEnemyFromNest).toHaveBeenCalledWith('zone1', 'nest-1', enemy!.id);
     });
 
     it('should return false for non-existent enemy', () => {
@@ -170,19 +169,17 @@ describe('EnemyStateStore', () => {
         lastSpawnCheckTime: 0,
       };
 
-      // getNest returns the nest during addEnemyFromNest so the enemy gets a nestId
-      (mockNestStateStore.getNest as jest.Mock).mockReturnValue(mockNest);
       const enemy = await store.addEnemyFromNest(mockNest);
       expect(enemy).toBeDefined();
       expect(enemy!.nestId).toBe('nest-gone');
 
-      // Simulate nest being removed — getNest now returns undefined
-      (mockNestStateStore.getNest as jest.Mock).mockReturnValue(undefined);
+      // Simulate nest being removed — removeEnemyFromNest returns false
+      (mockNestStateStore.removeEnemyFromNest as jest.Mock).mockReturnValue(false);
 
       // removeEnemy should still succeed (not throw) even with a stale nestId
       const result = store.removeEnemy('zone1', enemy!.id);
       expect(result).toBe(true);
-      expect(mockNestStateStore.getNest).toHaveBeenCalledWith('zone1', 'nest-gone');
+      expect(mockNestStateStore.removeEnemyFromNest).toHaveBeenCalledWith('zone1', 'nest-gone', enemy!.id);
       expect(store.getEnemy('zone1', enemy!.id)).toBeUndefined();
     });
   });

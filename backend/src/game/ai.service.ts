@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EnemyInstance } from './interfaces/enemy-instance.interface';
 import { AIAction, AIActionMoveTo } from './interfaces/ai-action.interface';
-import { Character } from 'src/character/character.entity';
 import { RuntimeCharacterData } from './stores/player-state.store';
 import { PlayerStateStore } from './stores/player-state.store';
 import { EnemyStateStore } from './stores/enemy-state.store';
@@ -192,26 +191,4 @@ export class AIService {
         return Math.sqrt(dx * dx + dy * dy);
     }
 
-    // Finds character by *exact* position - may need refinement later (e.g., proximity check)
-    private findCharacterFromPosition(position: {x:number, y:number}, zoneId:string): Character | undefined {
-          let foundCharacter: Character | undefined; // Use actual Character type if possible
-
-          const players = this.playerStateStore.getPlayersInZone(zoneId); // Gets Map<userId, RuntimePlayerData>
-          for(const player of players.values()){
-              for(const char of player.characters){ // char is RuntimeCharacterData
-                  // Use a small tolerance for floating point comparison?
-                  if(char.positionX === position.x && char.positionY === position.y){
-                      // Need to return the base Character data or ZoneCharacterState?
-                      // For now, let's assume we need something ZoneService can provide easily
-                      // Returning the RuntimeCharacterData for now, adjust if needed
-                      foundCharacter = char; // This is RuntimeCharacterData, not Character entity directly
-                      break; // Found one at this position
-                  }
-              }
-              if (foundCharacter) break; // Stop searching players if found
-          }
-          // This method might not be needed if ATTACK action uses targetEntityId from findClosestPlayer
-          this.logger.warn(`findCharacterFromPosition might be redundant now.`);
-          return foundCharacter; // Returns RuntimeCharacterData or undefined
-      }
 } 

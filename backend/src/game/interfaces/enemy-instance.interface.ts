@@ -18,6 +18,7 @@ export interface EnemyInstance {
     baseSpeed: number; // <-- ADDED: Speed from the template for movement
     lootTableId: string | null; // <-- ADDED: Loot table ID from template
     spriteKey: string; // Key for frontend sprite rendering (e.g., 'goblin', 'spider')
+    level: number; // Enemy level from template (used for XP scaling)
     // Add speed? range? from template if needed elsewhere
     // name: string;
 

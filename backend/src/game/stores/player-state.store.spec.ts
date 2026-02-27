@@ -359,6 +359,32 @@ describe('PlayerStateStore', () => {
     });
   });
 
+  describe('setCharacterAnchor', () => {
+    it('should set anchor position on existing character', async () => {
+      const socket = createMockSocket();
+      const character = createMockCharacter({
+        currentZoneId: 'zone1',
+        positionX: 200,
+        positionY: 300,
+      });
+
+      await store.addPlayerToZone('zone1', socket, mockUser, [character]);
+
+      const result = store.setCharacterAnchor('zone1', 'char-1', 500, 600);
+
+      expect(result).toBe(true);
+      const runtimeChar = store.getCharacterStateById('zone1', 'char-1')!;
+      expect(runtimeChar.anchorX).toBe(500);
+      expect(runtimeChar.anchorY).toBe(600);
+    });
+
+    it('should return false when character is not found in zone', () => {
+      store.ensureZone('zone1');
+      const result = store.setCharacterAnchor('zone1', 'nonexistent-char', 100, 200);
+      expect(result).toBe(false);
+    });
+  });
+
   describe('removePlayerFromZone', () => {
     it('should return zoneId and userId when removing player', async () => {
       const socket = createMockSocket();

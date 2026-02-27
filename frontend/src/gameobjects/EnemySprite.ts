@@ -8,10 +8,12 @@ export class EnemySprite extends Phaser.GameObjects.Sprite {
     private spriteKey: string;
     private healthBar: HealthBar; // Add health bar property
     private isDying: boolean = false; // Track death animation state
+    public readonly level: number;
     constructor(scene: Phaser.Scene, x: number, y: number, spriteKey:string, name: string, enemyData?:any) {
         const resolvedKey = scene.textures.exists(spriteKey) ? spriteKey : 'goblin';
         super(scene, x, y, resolvedKey); // Ensure spriteKey is passed correctly
         this.spriteKey = spriteKey
+        this.level = enemyData?.level ?? 1;
         this.scene.add.existing(this);
         scene.physics.add.existing(this);
         (this.body as Phaser.Physics.Arcade.Body).setCollideWorldBounds(true); // CORRECT LINE
@@ -22,7 +24,7 @@ export class EnemySprite extends Phaser.GameObjects.Sprite {
         this.targetY = y;
 
         // Example Name Label - initially hidden
-        this.nameLabel = scene.add.text(0, 0, name, {
+        this.nameLabel = scene.add.text(0, 0, `${name} (Lv ${this.level})`, {
             fontSize: '12px',
             color: '#ffffff',
             stroke: '#000000',

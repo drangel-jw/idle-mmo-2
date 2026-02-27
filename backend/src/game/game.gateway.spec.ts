@@ -108,8 +108,6 @@ describe('GameGateway', () => {
 
     // Mock afterInit BEFORE describe block
     const afterInitSpy = jest.spyOn(GameGateway.prototype, 'afterInit').mockImplementation(async function (server: any) {
-        const instance: GameGateway = this;
-        instance['logger']?.log('[TEST] Mocked afterInit executing...');
         // Apply Auth Middleware using ONLY the globally defined mocks
         server.use(async (socket: Socket, next: (err?: Error) => void) => {
             const token = socket.handshake.auth?.token;
@@ -125,7 +123,6 @@ describe('GameGateway', () => {
                 next(new Error('Test Auth Error: Verification failed'));
             }
         });
-        instance['logger']?.log('[TEST] Mocked afterInit finished, loop NOT started.');
     });
 
     beforeAll(async () => {

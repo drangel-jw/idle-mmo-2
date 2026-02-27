@@ -256,6 +256,7 @@ describe('CharacterStateService', () => {
         baseSpeed: 50,
         lootTableId: null,
         spriteKey: 'goblin',
+        level: 1,
       };
       mockEnemyStateStore.getEnemyInstanceById.mockReturnValue(mockEnemy);
       // Mock combat to avoid undefined combatResult - attack might fire if cooldown is ready
@@ -301,7 +302,7 @@ describe('CharacterStateService', () => {
         id: 'enemy1', templateId: 't', zoneId: 'zone1', name: 'Dummy',
         currentHealth: 1, baseHealth: 1, position: { x: 300, y: 300 }, aiState: 'IDLE',
         baseAttack: 1, baseDefense: 1, baseSpeed: 1,
-        lootTableId: null, spriteKey: 'goblin',
+        lootTableId: null, spriteKey: 'goblin', level: 1,
       };
       mockEnemyStateStore.getEnemyInstanceById.mockReturnValue(dummyEnemy);
 
@@ -325,7 +326,7 @@ describe('CharacterStateService', () => {
         position: { x: 150, y: 100 }, // 50 units away
         aiState: 'IDLE',
         baseAttack: 1, baseDefense: 1, baseSpeed: 50,
-        lootTableId: null, spriteKey: 'goblin',
+        lootTableId: null, spriteKey: 'goblin', level: 1,
       };
 
       mockEnemyStateStore.getEnemyInstanceById.mockReturnValue(enemyInRange);
@@ -348,7 +349,7 @@ describe('CharacterStateService', () => {
         position: { x: 250, y: 100 }, // 150 units away
         aiState: 'IDLE',
         baseAttack: 1, baseDefense: 1, baseSpeed: 50,
-        lootTableId: null, spriteKey: 'goblin',
+        lootTableId: null, spriteKey: 'goblin', level: 1,
       };
 
       const now = Date.now();
@@ -380,7 +381,7 @@ describe('CharacterStateService', () => {
         position: { x: 120, y: 100 }, // 20 units, in range
         aiState: 'IDLE',
         baseAttack: 8, baseDefense: 3, baseSpeed: 50,
-        lootTableId: null, spriteKey: 'goblin',
+        lootTableId: null, spriteKey: 'goblin', level: 1,
       };
       mockEnemyStateStore.getEnemyInstanceById.mockReturnValue(targetEnemy);
       mockCombatService.handleAttack.mockResolvedValue({ damageDealt: 5, targetDied: false, targetCurrentHealth: 75 });
